@@ -1,0 +1,73 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>DeadReckoning</AssemblyName>
+    <RootNamespace>DeadReckoning</RootNamespace>
+    <Version>0.1.0</Version>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <ModDeployPath>$(MoonlightPeaksPluginDeployPath)\DeadReckoning</ModDeployPath>
+    <!-- The game ships its own copies of every assembly below; never copy them next to the plugin. -->
+    <AssemblySearchPaths>$(AssemblySearchPaths);$(MoonlightPeaksManagedPath)</AssemblySearchPaths>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(MoonlightPeaksBepInExCorePath)\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Harmony, for patching RelationshipListWidget.OnSetup to add a Track button per card. -->
+    <Reference Include="0Harmony">
+      <HintPath>$(MoonlightPeaksBepInExCorePath)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <Reference Include="UnityEngine">
+      <HintPath>$(MoonlightPeaksManagedPath)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(MoonlightPeaksManagedPath)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Physics, RaycastHit, QueryTriggerInteraction (SphereCast wall collision). -->
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(MoonlightPeaksManagedPath)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(MoonlightPeaksManagedPath)\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Canvas and CanvasGroup live here, not in CoreModule. -->
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(MoonlightPeaksManagedPath)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(MoonlightPeaksManagedPath)\Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <Reference Include="Vampire.Runtime">
+      <HintPath>$(MoonlightPeaksManagedPath)\Vampire.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="littlechickengamecompany.chicken-utilities.runtime">
+      <HintPath>$(MoonlightPeaksManagedPath)\littlechickengamecompany.chicken-utilities.runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- UIScreen<T>, ListWidget/ScrollableListWidget<T> and their .Data live here (Chicken.UI). -->
+    <Reference Include="littlechickengamecompany.chicken-ui.runtime">
+      <HintPath>$(MoonlightPeaksManagedPath)\littlechickengamecompany.chicken-ui.runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="DeployPlugin" AfterTargets="Build" Condition="'$(SkipDeploy)' != 'true'">
+    <MakeDir Directories="$(ModDeployPath)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModDeployPath)" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="Deployed $(AssemblyName).dll -> $(ModDeployPath)" />
+  </Target>
+
+</Project>
