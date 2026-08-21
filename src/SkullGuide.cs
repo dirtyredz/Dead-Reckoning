@@ -1,8 +1,13 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Text;
 using Chicken.UI;
 using Chicken.Utilities;
+using Director.Core;
+using Director.Nodes;
 using UnityEngine;
 
 namespace DeadReckoning
@@ -36,13 +41,19 @@ namespace DeadReckoning
         private string trackedName;
         private Action<PickNpcListWidget> npcClickedHandler;
 
+        private StartQuestNode trackedQuestNode;  // quest target: steer to its current objective's last NPC
+        private QuestPersistence trackedQuestData;
+        private float nextQuestRefresh;
+
         private readonly TrackHud hud = new TrackHud();
         private readonly MapPin mapPin = new MapPin();
+        private readonly PathGuide pathGuide = new PathGuide();
 
         private PickNpcScreen pickerScreen;
         private bool pickerBlocking; // blocks gameplay input (camera zoom) while the picker is open
         private static bool pickerProbed; // one-shot: dump a picker card's hierarchy to find the native selection frame
         private static bool mapProbed;    // one-shot: dump a tracked map house marker's hierarchy
+        private static bool npcMarkerProbed; // one-shot: dump a tracked map NPC marker's hierarchy
         private const string PickerBlockId = "DeadReckoningNpcPicker";
 
         private const float MaxSpeed = 14f;        // floor; the real cap scales with player speed
@@ -67,7 +78,11 @@ namespace DeadReckoning
         private bool wantActive;      // user intends the skull to be out; survives scene changes
         private float nextSpawnAttempt;
 
-        private void Awake() => Instance = this;
+        private void Awake()
+        {
+            Instance = this;
+            hud.OnClose = ClearTarget; // the ✕ next to the seeking overlay stops seeking
+        }
 
         // --- External tracking API (used by the Relationships Track button). Mirrors the picker path
         // without touching it, so the working F8 flow is unchanged. ---
@@ -77,18 +92,22 @@ namespace DeadReckoning
         {
             tracked = cfg;
             trackedRooms = null; hasPin = false; // single target
+            trackedQuestNode = null; trackedQuestData = null;
             trackedName = cfg != null ? AddressableLibrary<NpcLibrary>.Instance.GetNpcName(cfg, checkIsNameRevealed: false) : null;
             cachedRoute = null; nextRouteAt = 0f;
             DeadReckoningPlugin.Log.LogInfo($"Now tracking: {trackedName ?? "<none>"}");
+            if (cfg != null) EnsureSkull();
         }
 
         internal void SetTrackedRooms(List<RoomAsset> rooms, string name)
         {
             trackedRooms = rooms != null ? rooms.Where(r => r != null).ToList() : null;
             tracked = null; hasPin = false; // single target
+            trackedQuestNode = null; trackedQuestData = null;
             trackedName = name;
             cachedRoute = null; nextRouteAt = 0f;
             DeadReckoningPlugin.Log.LogInfo($"Now tracking place: {name ?? "<none>"}");
+            if (trackedRooms != null && trackedRooms.Count > 0) EnsureSkull();
         }
 
         private void SetPin(RoomAsset room, Vector3 roomPos, string name)
@@ -96,9 +115,23 @@ namespace DeadReckoning
             trackedRooms = new List<RoomAsset> { room }; // reuse room routing when out of the room
             pinRoom = room; pinRoomPos = roomPos; hasPin = true;
             tracked = null;
+            trackedQuestNode = null; trackedQuestData = null;
             trackedName = name;
             cachedRoute = null; nextRouteAt = 0f;
             DeadReckoningPlugin.Log.LogInfo($"Now tracking pin: {name}");
+            EnsureSkull();
+        }
+
+        /// <summary>Tracking something makes the skull appear if it isn't already out — there's no manual
+        /// summon key any more. The Update loop keeps it (re)spawned while <c>wantActive</c> holds.</summary>
+        private void EnsureSkull()
+        {
+            wantActive = true;
+            if (active == null && Time.time >= nextSpawnAttempt)
+            {
+                nextSpawnAttempt = Time.time + 0.75f;
+                Spawn();
+            }
         }
 
         /// <summary>World position of a free pin when we're in its room (relative to the player).</summary>
@@ -119,6 +152,212 @@ namespace DeadReckoning
         {
             if (IsTracked(cfg)) ClearTarget();
             else SetTracked(cfg);
+        }
+
+        // --- Quest tracking (used by the Quest Log Track button) ----------------------------------
+
+        internal bool IsQuestTracked(QuestPersistence data) =>
+            trackedQuestData != null && data != null && trackedQuestData.Guid == data.Guid;
+
+        internal void ToggleQuest(StartQuestNode node, QuestPersistence data)
+        {
+            if (IsQuestTracked(data)) ClearTarget();
+            else TrackQuest(node, data);
+        }
+
+        internal void TrackQuest(StartQuestNode node, QuestPersistence data)
+        {
+            trackedQuestNode = node;
+            trackedQuestData = data;
+            tracked = null; trackedRooms = null; hasPin = false;
+            trackedName = node != null ? node.GetQuestTitle() : null;
+            cachedRoute = null; nextRouteAt = 0f; nextQuestRefresh = 0f;
+            DeadReckoningPlugin.Log.LogInfo($"Now tracking quest: {trackedName ?? "<none>"}");
+            if (DeadReckoningPlugin.VerboseLogging.Value) DumpQuest();
+            RefreshQuestTarget();
+            EnsureSkull();
+        }
+
+        /// <summary>Objectives of the tracked quest, in order (node + its saved state).</summary>
+        private static IEnumerable<KeyValuePair<QuestObjectiveNode, QuestObjectivePersistence>> QuestObjectives(StartQuestNode start)
+        {
+            if (start == null) yield break;
+            foreach (BaseDirectorNode child in start.ChildNodes)
+            {
+                if (child is QuestObjectiveNode qon)
+                {
+                    QuestObjectivePersistence p = GamePersistence.Instance.QuestObjectives.FindOrCreate(qon.SerializedGuid);
+                    yield return new KeyValuePair<QuestObjectiveNode, QuestObjectivePersistence>(qon, p);
+                }
+            }
+        }
+
+        /// <summary>Point the skull at the tracked quest's current objective — its last still-required NPC
+        /// (the "last task"). Drives the existing NPC steering by setting <c>tracked</c>. Idles if the
+        /// current objective's task isn't a locatable NPC.</summary>
+        private void RefreshQuestTarget()
+        {
+            if (trackedQuestNode == null) return;
+            if (Time.time < nextQuestRefresh) return;
+            nextQuestRefresh = Time.time + 0.5f;
+
+            try
+            {
+                NpcConfigAsset targetCfg = null;
+                foreach (KeyValuePair<QuestObjectiveNode, QuestObjectivePersistence> kv in QuestObjectives(trackedQuestNode))
+                {
+                    QuestObjectiveNode node = kv.Key;
+                    QuestObjectivePersistence p = kv.Value;
+                    if (p == null || p.Status != QuestObjectiveStatus.InProgress) continue;
+
+                    // a) Last still-required NPC of this objective (RequiredNpcList minus DoneNpcList).
+                    for (int i = p.RequiredNpcList.Count - 1; i >= 0; i--)
+                    {
+                        EntityAsset entity = p.RequiredNpcList[i].Asset;
+                        if (entity == null) continue;
+                        if (p.DoneNpcList.Any(d => d.Asset == entity)) continue;
+                        if (AddressableLibrary<NpcLibrary>.Instance.TryFind(entity, out NpcConfigAsset cfg) && cfg != null)
+                        {
+                            targetCfg = cfg;
+                            break;
+                        }
+                    }
+
+                    // b) Fallback: most objectives don't carry an NPC requirement — the target (vendor /
+                    // recipient / location) is only the gold-coloured (#FCEBAE) name in the objective
+                    // title, e.g. "Deliver Red Wine to <gold>Orlock</gold>". Resolve that name to an NPC.
+                    if (targetCfg == null)
+                    {
+                        string name = LastGoldToken(node.GetObjectiveTitle());
+                        if (!string.IsNullOrEmpty(name)) targetCfg = FindNpcByName(name);
+                    }
+
+                    if (targetCfg != null) break;
+                }
+
+                if (targetCfg != null)
+                {
+                    if (tracked != targetCfg)
+                    {
+                        tracked = targetCfg; trackedRooms = null; hasPin = false;
+                        cachedRoute = null; nextRouteAt = 0f;
+                    }
+                }
+                else if (tracked != null || trackedRooms != null)
+                {
+                    tracked = null; trackedRooms = null; hasPin = false; cachedRoute = null; // idle
+                }
+            }
+            catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Quest target refresh failed: {e.Message}"); }
+        }
+
+        /// <summary>The inner text of the LAST gold-coloured (#FCEBAE) token in an objective title — the
+        /// game's colour for a character/location reference. That's the "to X"/"from X"/"Visit X" target.</summary>
+        private static string LastGoldToken(string title)
+        {
+            if (string.IsNullOrEmpty(title)) return null;
+            int idx = title.LastIndexOf("<color=#FCEBAE", StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return null;
+            int gt = title.IndexOf('>', idx);
+            if (gt < 0) return null;
+            int close = title.IndexOf("</color>", gt, StringComparison.OrdinalIgnoreCase);
+            if (close < 0) return null;
+            return StripTags(title.Substring(gt + 1, close - gt - 1)).Trim();
+        }
+
+        private static string StripTags(string s)
+        {
+            var sb = new StringBuilder();
+            bool inTag = false;
+            foreach (char c in s)
+            {
+                if (c == '<') inTag = true;
+                else if (c == '>') inTag = false;
+                else if (!inTag) sb.Append(c);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>An NPC whose display name matches (a game character referenced by name in a quest).</summary>
+        private static NpcConfigAsset FindNpcByName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            try
+            {
+                NpcLibrary lib = AddressableLibrary<NpcLibrary>.Instance;
+                foreach (NpcConfigAsset cfg in NpcLibrary.NpcConfigs)
+                {
+                    string n = lib.GetNpcName(cfg, checkIsNameRevealed: false);
+                    if (!string.IsNullOrEmpty(n) && string.Equals(n.Trim(), name, StringComparison.OrdinalIgnoreCase))
+                        return cfg;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>The on-screen objectives list for the tracked quest — completed/failed dimmed and
+        /// struck through, mirroring the Quest Log panel.</summary>
+        // Quest text is denser than a single "Tracking: X" line, so cap its size a bit below the config.
+        private static float QuestHudFontSize() => Mathf.Min(DeadReckoningPlugin.HudFontSize.Value, 22f);
+
+        /// <summary>The tracked quest's objectives list, echoing the Quest Log panel: gold title, a purple
+        /// diamond for active objectives and a magenta check for completed (dimmed + struck through).
+        /// TMP has no closing &lt;/alpha&gt;, so alpha is reset with &lt;alpha=#FF&gt; instead.</summary>
+        private string BuildQuestHud()
+        {
+            var sb = new StringBuilder();
+            sb.Append("<b><color=#F5D98A>").Append(trackedName ?? "Quest").Append("</color></b>");
+            try
+            {
+                foreach (KeyValuePair<QuestObjectiveNode, QuestObjectivePersistence> kv in QuestObjectives(trackedQuestNode))
+                {
+                    QuestObjectiveNode node = kv.Key;
+                    QuestObjectivePersistence p = kv.Value;
+                    if (p == null || p.Status == QuestObjectiveStatus.NotStarted) continue;
+
+                    bool done = p.Status == QuestObjectiveStatus.Completed || p.Status == QuestObjectiveStatus.Failed;
+                    string title = node.GetObjectiveTitle();
+                    string counter = node.ShowCounterValue ? $"  {node.CurrentCounterValue}/{node.RequiredCounterValue}" : "";
+                    sb.Append('\n');
+                    if (done)
+                        sb.Append("<color=#E36FD0>✓</color> <alpha=#77><s>").Append(title).Append(counter).Append("</s><alpha=#FF>");
+                    else
+                        sb.Append("<color=#9E77E6>◆</color> ").Append(title).Append(counter);
+                }
+            }
+            catch { }
+            return sb.ToString();
+        }
+
+        /// <summary>One-shot (VerboseLogging): dump the tracked quest's objectives + their NPC requirements
+        /// so we can see how a target like a vendor is (or isn't) referenced.</summary>
+        private void DumpQuest()
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine($"DR-QUESTPROBE '{trackedName}':");
+                foreach (KeyValuePair<QuestObjectiveNode, QuestObjectivePersistence> kv in QuestObjectives(trackedQuestNode))
+                {
+                    QuestObjectiveNode node = kv.Key;
+                    QuestObjectivePersistence p = kv.Value;
+                    sb.AppendLine($"  obj '{node.ObjectiveName}' status={p?.Status} counter={node.ShowCounterValue}({node.CurrentCounterValue}/{node.RequiredCounterValue}) title='{node.GetObjectiveTitle()}'");
+                    if (p != null)
+                    {
+                        foreach (var req in p.RequiredNpcList)
+                        {
+                            EntityAsset e = req.Asset;
+                            bool npc = e != null && AddressableLibrary<NpcLibrary>.Instance.TryFind(e, out _);
+                            sb.AppendLine($"      requiredNpc: {(e != null ? e.name : "null")} resolvesToNpc={npc} done={p.DoneNpcList.Any(d => d.Asset == e)}");
+                        }
+                    }
+                    foreach (BaseDirectorNode child in node.ChildNodes)
+                        sb.AppendLine($"      child: {child.GetType().Name}");
+                }
+                DeadReckoningPlugin.Log.LogInfo(sb.ToString());
+            }
+            catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Quest probe failed: {e.Message}"); }
         }
 
         private float nextRelCheck;
@@ -146,27 +385,19 @@ namespace DeadReckoning
 
             try
             {
-                if (DeadReckoningPlugin.SpawnKey.Value.IsDown())
-                {
-                    wantActive = !wantActive;
-                    if (!wantActive) Despawn();
-                }
-
                 if (DeadReckoningPlugin.PickNpcKey.Value.IsDown())
                 {
                     if (PickerOpen()) ClosePicker();
                     else OpenNpcPicker();
                 }
 
-                if (DeadReckoningPlugin.MapTrackKey.Value.IsDown())
+                // Track from the map by DOUBLE-CLICKING a place/NPC/spot.
+                if (MapScreenOpen() && DoubleClickedOnMap())
                     TryMapTrack();
 
                 // Let the cancel/back input (Esc / controller B) close the picker too.
                 if (PickerOpen() && InputUtility.GetCancelInputDown())
                     ClosePicker();
-
-                if (DeadReckoningPlugin.ClearTargetKey.Value.IsDown())
-                    ClearTarget();
             }
             catch (Exception e)
             {
@@ -186,7 +417,8 @@ namespace DeadReckoning
                 Spawn();
             }
 
-            if (active != null) Steer();
+            if (trackedQuestNode != null) RefreshQuestTarget();
+            if (active != null) { Steer(); ApplyFlameColor(); }
 
             UpdateHud();
             UpdateMapPin();
@@ -200,10 +432,18 @@ namespace DeadReckoning
             {
                 if (MapScreenOpen())
                 {
+                    // If we're seeking an NPC, find the room they're in right now. When that room belongs
+                    // to a house/place marker, we light up the HOUSE (they're indoors); when they're out
+                    // in the open their own NPC marker lights up instead. Recomputed each frame, so the
+                    // map follows them live as they move between the two.
+                    RoomAsset npcRoom = TrackedNpcRoom();
+
                     foreach (MapLocationMarkerListWidget w in UnityEngine.Object.FindObjectsByType<MapLocationMarkerListWidget>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
                     {
                         MapLocationMarker m = ((ListWidget<MapLocationMarker>)w).Data;
-                        bool on = !hasPin && trackedRooms != null && m != null && m.RoomAssets != null && m.RoomAssets.Any(r => trackedRooms.Contains(r));
+                        bool on = m != null && m.RoomAssets != null &&
+                            ((!hasPin && trackedRooms != null && m.RoomAssets.Any(r => trackedRooms.Contains(r))) ||
+                             (npcRoom != null && m.RoomAssets.Contains(npcRoom)));
                         if (on && !mapProbed && DeadReckoningPlugin.VerboseLogging.Value)
                         {
                             mapProbed = true;
@@ -213,7 +453,16 @@ namespace DeadReckoning
                         MapMarkerTint.Set(w, on);
                     }
                     foreach (MapNpcMarkerListWidget w in UnityEngine.Object.FindObjectsByType<MapNpcMarkerListWidget>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
-                        MapMarkerTint.Set(w, tracked != null && ((ListWidget<NpcConfigAsset>)w).Data == tracked);
+                    {
+                        bool onNpc = SameNpc(((ListWidget<NpcConfigAsset>)w).Data, tracked);
+                        if (onNpc && !npcMarkerProbed && DeadReckoningPlugin.VerboseLogging.Value)
+                        {
+                            npcMarkerProbed = true;
+                            try { DumpWidget(w, "DR-NPCMARKERPROBE map npc marker hierarchy:"); }
+                            catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"NPC marker probe failed: {e.Message}"); }
+                        }
+                        MapMarkerTint.Set(w, onNpc, circle: true);
+                    }
                 }
 
                 if (PickerOpen())
@@ -225,11 +474,40 @@ namespace DeadReckoning
                             pickerProbed = true;
                             try { DumpPickerCard(w); } catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Picker probe failed: {e.Message}"); }
                         }
-                        MapMarkerHighlight.Set(w, tracked != null && w.Data == tracked);
+                        MapMarkerHighlight.Set(w, SameNpc(w.Data, tracked));
                     }
                 }
             }
             catch { }
+        }
+
+        /// <summary>Match NPCs by identity, not reference — a quest-resolved NpcConfigAsset can be a
+        /// different instance than the picker/map widget's, so reference == would wrongly miss it.</summary>
+        private static bool SameNpc(NpcConfigAsset a, NpcConfigAsset b)
+        {
+            if (a == null || b == null) return false;
+            if (a == b) return true;
+            try { return a.Entity != null && b.Entity != null && a.Entity.SerializedGuid == b.Entity.SerializedGuid; }
+            catch { return false; }
+        }
+
+        /// <summary>The room the currently-sought NPC is in right now (null if we're not seeking an NPC).
+        /// Used to light up their house on the map when they're indoors.</summary>
+        private RoomAsset TrackedNpcRoom()
+        {
+            if (tracked == null || tracked.Entity == null || hasPin || trackedRooms != null) return null;
+            try { return GamePersistence.Instance.EntityCharacters.FindOrCreate(tracked.Entity).Room; }
+            catch { return null; }
+        }
+
+        /// <summary>Are we currently seeking (any of) these rooms as a place — i.e. is this the house/place
+        /// marker that's lit up right now?</summary>
+        private bool IsTrackingRooms(System.Collections.Generic.IReadOnlyList<RoomAsset> rooms)
+        {
+            if (hasPin || trackedRooms == null || rooms == null) return false;
+            for (int i = 0; i < rooms.Count; i++)
+                if (rooms[i] != null && trackedRooms.Contains(rooms[i])) return true;
+            return false;
         }
 
         private void UpdateMapPin()
@@ -247,20 +525,52 @@ namespace DeadReckoning
                     mapPin.Hide();
                     return;
                 }
-                Transform parent = mw.RoomMarkers[0].RectTransform != null ? mw.RoomMarkers[0].RectTransform.parent : mw.transform;
+                // Parent the pin to the constant-size marker OVERLAY (where the house/location markers
+                // live), NOT the zoom-scaled map content that RoomMarkers sit in — otherwise the pin
+                // shrinks with zoom-out. GetUIPositionFromRoomPosition returns a world position, so it
+                // still lands in the right spot regardless of parent.
+                Transform parent = MapMarkerOverlay()
+                    ?? (mw.RoomMarkers[0].RectTransform != null ? mw.RoomMarkers[0].RectTransform.parent : mw.transform);
                 mapPin.Refresh(mw, pinRoom, pinRoomPos, parent);
             }
             catch { mapPin.Hide(); }
         }
 
+        /// <summary>The constant-size overlay the game's location/NPC markers live in (siblings of our
+        /// pin), so the pin doesn't scale with the map zoom. Null if no such marker is present.</summary>
+        private static Transform MapMarkerOverlay()
+        {
+            var loc = UnityEngine.Object.FindObjectsByType<MapLocationMarkerListWidget>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            if (loc.Length > 0 && loc[0].transform.parent != null) return loc[0].transform.parent;
+            var npc = UnityEngine.Object.FindObjectsByType<MapNpcMarkerListWidget>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            if (npc.Length > 0 && npc[0].transform.parent != null) return npc[0].transform.parent;
+            return null;
+        }
+
         private void UpdateHud()
         {
-            if (!DeadReckoningPlugin.ShowHud.Value || active == null)
+            if (!DeadReckoningPlugin.ShowHud.Value || active == null || MenuOpen())
             {
                 hud.Hide();
                 return;
             }
-            hud.Set(HasTarget() ? $"Tracking: {trackedName}" : "Tracking: nobody yet");
+            if (trackedQuestNode != null) { hud.Set(BuildQuestHud(), QuestHudFontSize()); return; }
+            string line = HasTarget() ? $"Seeking: <color=#F5D98A>{trackedName}</color>" : "Seeking: no one yet";
+            hud.Set(line, QuestHudFontSize());
+        }
+
+        /// <summary>True when a menu (map, relationships, pause, chest, cutscene…) is up, so the tracking
+        /// text hides instead of overlaying it. Same signal ChestLabels uses:
+        /// <c>PlayerCursorInteractionScreen</c> is showing exactly when the player can act in the world,
+        /// and is gone for every menu/chest/pause/cutscene. Fails to "no menu" if the state can't be read.</summary>
+        private static bool MenuOpen()
+        {
+            try
+            {
+                var cursor = UIScreen<PlayerCursorInteractionScreen>.Instance;
+                return cursor == null || !cursor.IsShowing;
+            }
+            catch { return false; }
         }
 
         // ---- Spawn --------------------------------------------------------------------------
@@ -325,25 +635,134 @@ namespace DeadReckoning
             skullVisualLift = -1f; // re-measure the mesh's float offset for this instance
             hasLastPlayer = false; playerSpeed = 0f;
             wanderAngle = Mathf.Atan2(fwd.z, fwd.x) * Mathf.Rad2Deg; // start idle drift from where it spawned
-            DeadReckoningPlugin.Log.LogInfo("Skull soul blob spawned. F8 to pick an NPC to track, F7 to clear, F9 to despawn.");
+
+            if (DeadReckoningPlugin.VerboseLogging.Value) { try { DumpBlob(view); } catch { } }
+            try { CacheFlame(view); ApplyFlameColor(); } catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Flame recolour failed: {e.Message}"); }
+
+            // The first steer snaps it to its spot (see justSpawned) so it appears there instead of
+            // flying in from off-screen. No fade/scale — plain appear.
+            justSpawned = true;
+
+            DeadReckoningPlugin.Log.LogInfo("Skull soul blob spawned (auto-summoned by tracking). F8 to pick an NPC, F7 to clear.");
         }
+
+        private bool justSpawned; // first steer snaps to the target spot so it doesn't fly in
 
         private void Despawn()
         {
             if (active == null) return;
+            CritterView dying = active;
+            active = null;
             try
             {
-                if (active.CritterBehaviour != null && active.CritterBehaviour.enabled)
-                    active.HideAndDestroy();
-                else
-                    UnityEngine.Object.Destroy(active.gameObject);
+                if (dying.CritterBehaviour != null && dying.CritterBehaviour.enabled)
+                    dying.HideAndDestroy();
+                else if (dying.gameObject != null)
+                    UnityEngine.Object.Destroy(dying.gameObject);
             }
             catch (Exception e)
             {
                 DeadReckoningPlugin.Log.LogWarning($"Despawn fell back to Destroy: {e.Message}");
-                if (active != null) UnityEngine.Object.Destroy(active.gameObject);
+                if (dying != null && dying.gameObject != null) UnityEngine.Object.Destroy(dying.gameObject);
             }
-            finally { active = null; }
+        }
+
+        private readonly List<Material> flameMats = new List<Material>();
+        private readonly List<ParticleSystem> flareParticles = new List<ParticleSystem>();
+
+        /// <summary>Cache the soul blob's flame pieces (the Fire mesh + Flare particle) — NOT the skull —
+        /// using instanced materials so the ambient world soul blobs keep their own colour.</summary>
+        private void CacheFlame(CritterView view)
+        {
+            flameMats.Clear();
+            flareParticles.Clear();
+
+            foreach (Renderer r in view.GetComponentsInChildren<Renderer>(true))
+            {
+                bool isFlame = r.name == "Fire" || r.name == "Flare" ||
+                               (r.sharedMaterial != null &&
+                                (r.sharedMaterial.name.IndexOf("Flame", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 r.sharedMaterial.name.IndexOf("Flare", StringComparison.OrdinalIgnoreCase) >= 0));
+                if (!isFlame) continue;
+                foreach (Material m in r.materials) // instances
+                    if (m != null) flameMats.Add(m);
+            }
+            foreach (ParticleSystem ps in view.GetComponentsInChildren<ParticleSystem>(true))
+                if (ps.name.IndexOf("Flare", StringComparison.OrdinalIgnoreCase) >= 0) flareParticles.Add(ps);
+        }
+
+        /// <summary>Apply the configured flame colour to the cached pieces. Runs each frame so it takes
+        /// effect immediately when the colour config changes and survives late material init.</summary>
+        private void ApplyFlameColor()
+        {
+            if (!DeadReckoningPlugin.RecolorFlame.Value || (flameMats.Count == 0 && flareParticles.Count == 0)) return;
+            Color color = ParseHtml(DeadReckoningPlugin.FlameColor.Value, new Color(0.54f, 0.31f, 1f));
+
+            // The BlobFire flame is a 3-stop gradient (inner→mid→outer). Alpha stays 0 like the originals
+            // (the shader reads RGB). Inner is lightened, outer darkened, for a natural flame ramp.
+            Color inner = Color.Lerp(color, Color.white, 0.45f); inner.a = 0f;
+            Color mid = new Color(color.r, color.g, color.b, 0f);
+            Color outer = new Color(color.r * 0.4f, color.g * 0.4f, color.b * 0.4f, 0f);
+
+            for (int i = 0; i < flameMats.Count; i++)
+            {
+                Material m = flameMats[i];
+                if (m == null) continue;
+                if (m.HasProperty("_InnerColor")) m.SetColor("_InnerColor", inner);
+                if (m.HasProperty("_MidColor")) m.SetColor("_MidColor", mid);
+                if (m.HasProperty("_OuterColor")) m.SetColor("_OuterColor", outer);
+                if (m.HasProperty("_Color")) m.SetColor("_Color", color * 1.5f); // flare additive tint (HDR)
+            }
+            for (int i = 0; i < flareParticles.Count; i++)
+            {
+                if (flareParticles[i] == null) continue;
+                ParticleSystem.MainModule main = flareParticles[i].main;
+                main.startColor = color;
+            }
+        }
+
+        private static Color ParseHtml(string hex, Color fallback)
+        {
+            if (string.IsNullOrEmpty(hex)) return fallback;
+            if (hex[0] != '#') hex = "#" + hex;
+            return ColorUtility.TryParseHtmlString(hex, out Color c) ? c : fallback;
+        }
+
+        /// <summary>One-shot (VerboseLogging): dump the soul blob's renderers/materials/particles so we can
+        /// find the flame colour to recolour.</summary>
+        private static void DumpBlob(CritterView view)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"DR-BLOBPROBE '{view.name}':");
+            foreach (Renderer r in view.GetComponentsInChildren<Renderer>(true))
+            {
+                sb.AppendLine($"  Renderer '{r.name}' ({r.GetType().Name}) enabled={r.enabled}");
+                foreach (Material m in r.sharedMaterials)
+                {
+                    if (m == null) continue;
+                    sb.AppendLine($"    mat '{m.name}' shader='{m.shader?.name}'");
+                    Shader sh = m.shader;
+                    if (sh != null)
+                    {
+                        int n = sh.GetPropertyCount();
+                        for (int i = 0; i < n; i++)
+                        {
+                            var type = sh.GetPropertyType(i);
+                            string name = sh.GetPropertyName(i);
+                            string val = type == UnityEngine.Rendering.ShaderPropertyType.Color ? $"={m.GetColor(name)}"
+                                       : type == UnityEngine.Rendering.ShaderPropertyType.Float || type == UnityEngine.Rendering.ShaderPropertyType.Range ? $"={m.GetFloat(name)}"
+                                       : "";
+                            sb.AppendLine($"      prop {name} ({type}){val}");
+                        }
+                    }
+                }
+            }
+            foreach (ParticleSystem ps in view.GetComponentsInChildren<ParticleSystem>(true))
+            {
+                var main = ps.main;
+                sb.AppendLine($"  Particle '{ps.name}' startColor={main.startColor.color} mode={main.startColor.mode}");
+            }
+            DeadReckoningPlugin.Log.LogInfo(sb.ToString());
         }
 
         private void OnDisable() => Despawn();
@@ -373,9 +792,10 @@ namespace DeadReckoning
                 screen.OnNpcClicked.RemoveListener(npcClickedHandler); // avoid stacking on repeat opens
                 screen.OnNpcClicked.AddListener(npcClickedHandler);
                 screen.Setup(roster);
-                screen.Show("Track who?");
+                screen.Show("Seek who?");
                 pickerScreen = screen;
                 SetPickerBlock(true);
+                AttachStopButton(screen);
             }
             catch (Exception e)
             {
@@ -383,10 +803,92 @@ namespace DeadReckoning
             }
         }
 
+        private const string StopButtonName = "DR_StopSeek";
+        private static FieldInfo pickerTitleField;
+
+        /// <summary>Add a "Stop Seeking" button at the top of the NPC picker (shown only while something is
+        /// being sought). Reuses the button across opens.</summary>
+        private void AttachStopButton(PickNpcScreen screen)
+        {
+            try
+            {
+                bool seeking = tracked != null || trackedRooms != null || hasPin || trackedQuestNode != null;
+                Transform existing = FindChildDeep(screen.transform, StopButtonName);
+                if (existing != null) { existing.gameObject.SetActive(seeking); if (!seeking) return; }
+                if (!seeking) return;
+                if (existing != null) return;
+
+                if (pickerTitleField == null)
+                    pickerTitleField = typeof(PickNpcScreen).GetField("titleContainer", BindingFlags.Instance | BindingFlags.NonPublic);
+                var titleGo = pickerTitleField?.GetValue(screen) as GameObject;
+                Transform parent = titleGo != null ? titleGo.transform.parent : screen.transform;
+                int belowTitle = titleGo != null ? titleGo.transform.GetSiblingIndex() + 1 : 0;
+
+                var color = new Color(1f, 0.5f, 0.5f);
+                var go = new GameObject(StopButtonName, typeof(RectTransform), typeof(UnityEngine.UI.Image), typeof(UnityEngine.UI.Button), typeof(UnityEngine.UI.LayoutElement));
+                var rt = (RectTransform)go.transform;
+                rt.SetParent(parent, false);
+                rt.SetSiblingIndex(belowTitle); // just below the "Seek who?" title
+                var le = go.GetComponent<UnityEngine.UI.LayoutElement>();
+                le.preferredHeight = le.minHeight = 38f;
+                var bg = go.GetComponent<UnityEngine.UI.Image>();
+                bg.color = new Color(0f, 0f, 0f, 0f);
+                var btn = go.GetComponent<UnityEngine.UI.Button>();
+                btn.targetGraphic = bg;
+
+                var txtGo = new GameObject("Text", typeof(RectTransform), typeof(TMPro.TextMeshProUGUI));
+                var trt = (RectTransform)txtGo.transform;
+                trt.SetParent(go.transform, false);
+                trt.anchorMin = Vector2.zero; trt.anchorMax = Vector2.one; trt.offsetMin = Vector2.zero; trt.offsetMax = Vector2.zero;
+                var label = txtGo.GetComponent<TMPro.TextMeshProUGUI>();
+                label.text = "Stop Seeking";
+                label.alignment = TMPro.TextAlignmentOptions.Center;
+                label.fontSize = 22f;
+                label.color = color;
+                label.raycastTarget = false;
+                TMPro.TextMeshProUGUI srcFont = screen.GetComponentInChildren<TMPro.TextMeshProUGUI>(true);
+                if (srcFont != null) { if (srcFont.font != null) label.font = srcFont.font; if (srcFont.fontSharedMaterial != null) label.fontSharedMaterial = srcFont.fontSharedMaterial; }
+
+                // X icon just left of the centred label.
+                GameObject xIcon = DRIcons.BuildX(go.transform, 20f, color);
+                var xrt = (RectTransform)xIcon.transform;
+                xrt.anchorMin = xrt.anchorMax = new Vector2(0.5f, 0.5f);
+                xrt.anchoredPosition = new Vector2(-90f, 0f);
+
+                go.AddComponent<HoverScale>().Target = go.transform; // scale text + X together on hover
+                btn.onClick.AddListener(() => { ClearTarget(); ClosePicker(); });
+            }
+            catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Stop-seek button failed: {e.Message}"); }
+        }
+
+        private static Transform FindChildDeep(Transform root, string name)
+        {
+            if (root.name == name) return root;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform f = FindChildDeep(root.GetChild(i), name);
+                if (f != null) return f;
+            }
+            return null;
+        }
+
         private void OnNpcPicked(PickNpcListWidget widget)
         {
-            tracked = widget != null ? widget.Data : null;
+            NpcConfigAsset picked = widget != null ? widget.Data : null;
+
+            // Clicking the NPC you're already seeking stops seeking (and closes the picker).
+            if (picked != null && SameNpc(picked, tracked))
+            {
+                ClearTarget();
+                DetachPicker();
+                try { UIScreen<PickNpcScreen>.Instance.Hide(); } catch { }
+                SetPickerBlock(false);
+                return;
+            }
+
+            tracked = picked;
             trackedRooms = null; hasPin = false; // clear any place/free-pin target so the NPC actually wins
+            trackedQuestNode = null; trackedQuestData = null; // picking someone overrides quest tracking
             trackedName = tracked != null
                 ? AddressableLibrary<NpcLibrary>.Instance.GetNpcName(tracked, checkIsNameRevealed: false)
                 : null;
@@ -395,6 +897,7 @@ namespace DeadReckoning
             try { UIScreen<PickNpcScreen>.Instance.Hide(); } catch { }
             SetPickerBlock(false);
             DeadReckoningPlugin.Log.LogInfo($"Now tracking: {trackedName ?? "<none>"}");
+            if (tracked != null) EnsureSkull();
         }
 
         private void SetPickerBlock(bool on)
@@ -418,9 +921,13 @@ namespace DeadReckoning
             tracked = null;
             trackedRooms = null;
             hasPin = false;
+            trackedQuestNode = null; trackedQuestData = null;
             trackedName = null;
             cachedRoute = null; nextRouteAt = 0f;
-            DeadReckoningPlugin.Log.LogInfo("Tracking cleared — the skull just floats near you.");
+            // No target => no skull. It only exists while you're tracking something now.
+            wantActive = false;
+            Despawn();
+            DeadReckoningPlugin.Log.LogInfo("Tracking cleared — the skull is dismissed.");
         }
 
         private void DetachPicker()
@@ -472,7 +979,34 @@ namespace DeadReckoning
         private static string ColorHex(Color c) =>
             $"#{Mathf.RoundToInt(c.r * 255):X2}{Mathf.RoundToInt(c.g * 255):X2}{Mathf.RoundToInt(c.b * 255):X2}";
 
-        // ---- Track from the map (hover a place/NPC marker, press the map-track key) ---------
+        // ---- Track from the map (double-click a place/NPC/spot, or press the map-track key) --
+
+        private float lastMapClickTime = -1f;
+        private Vector2 lastMapClickPos;
+        private const float DoubleClickTime = 0.35f;   // max gap between the two clicks
+        private const float DoubleClickSlop = 22f;     // max pixel drift between the two clicks
+
+        /// <summary>True on the second of two quick left-clicks near the same spot. Only polled while the
+        /// map is open, so ordinary gameplay clicks never seed it.</summary>
+        private bool DoubleClickedOnMap()
+        {
+            if (!UnityEngine.Input.GetMouseButtonDown(0)) return false;
+
+            Vector2 pos = UnityEngine.Input.mousePosition;
+            float now = Time.unscaledTime;
+            bool isDouble = now - lastMapClickTime <= DoubleClickTime &&
+                            (pos - lastMapClickPos).sqrMagnitude <= DoubleClickSlop * DoubleClickSlop;
+
+            if (isDouble)
+            {
+                lastMapClickTime = -1f; // consume so a triple-click doesn't re-fire
+                return true;
+            }
+
+            lastMapClickTime = now;
+            lastMapClickPos = pos;
+            return false;
+        }
 
         private void TryMapTrack()
         {
@@ -492,18 +1026,27 @@ namespace DeadReckoning
                 {
                     MapLocationMarker marker = ((ListWidget<MapLocationMarker>)locWidget).Data;
                     if (marker != null && marker.RoomAssets != null && marker.RoomAssets.Count > 0)
-                        SetTrackedRooms(marker.RoomAssets, marker.GetLocationName());
-                    else
-                        DeadReckoningPlugin.Log.LogWarning("That place has no room to route to.");
+                    {
+                        // Double-clicking a place you're already seeking cancels it.
+                        if (IsTrackingRooms(marker.RoomAssets)) ClearTarget();
+                        else SetTrackedRooms(marker.RoomAssets, marker.GetLocationName());
+                    }
+                    else TryFreePin(); // no usable room on this marker → treat as a free pin
                 }
                 else if (hovered is MapNpcMarkerListWidget npcWidget)
                 {
                     NpcConfigAsset cfg = ((ListWidget<NpcConfigAsset>)npcWidget).Data;
-                    if (cfg != null) SetTracked(cfg);
+                    if (cfg != null)
+                    {
+                        // Double-clicking an NPC you're already seeking cancels it.
+                        if (SameNpc(cfg, tracked)) ClearTarget();
+                        else SetTracked(cfg);
+                    }
+                    else TryFreePin();
                 }
                 else
                 {
-                    // Nothing hovered → free pin: track the room whose map rectangle is under the cursor.
+                    // Nothing trackable hovered → free pin: the room whose map rectangle is under the cursor.
                     TryFreePin();
                 }
             }
@@ -560,6 +1103,13 @@ namespace DeadReckoning
                 0f,
                 Mathf.Lerp(rd.NavigationGraphRect.yMin, rd.NavigationGraphRect.yMax, v));
             Vector3 roomPos = rd.NavToRoomPosition(nav);
+
+            // Double-clicking (near) the pin you already dropped cancels it.
+            if (hasPin && pinRoom == best.RoomAsset && (pinRoomPos - roomPos).sqrMagnitude <= 4f)
+            {
+                ClearTarget();
+                return;
+            }
 
             string name;
             try { name = best.RoomAsset.GetRoomName(true); } catch { name = null; }
@@ -660,27 +1210,45 @@ namespace DeadReckoning
 
             if (live.HasValue)
             {
-                // Leading: sit on the straight torso-to-torso line from the player to the target, a
-                // standoff in. Both ends use the SAME height so a level target gives a flat line (no
-                // artificial upward bias) — the skull lands on the sightline, not above your head.
-                // Its own bob still makes it float. It only rises/dips when the target actually does.
+                // Both ends at the SAME height so a level target gives a flat line (no upward bias) —
+                // the skull lands on the sightline, not above your head. Its own bob still makes it float.
                 Vector3 a = player + Vector3.up * TrackEyeHeight;
-                Vector3 b = live.Value + Vector3.up * TrackEyeHeight;
-                Vector3 to = b - a;
-                float dist = to.magnitude;
-                Vector3 dir = dist > 0.001f ? to / dist : FlatDirFromPlayer(skull, player);
-                float reach = Mathf.Min(standoff, dist * 0.85f); // don't sit on top of a close target
-                Vector3 onLine = a + dir * reach;                // where the VISIBLE skull should land
+
+                // Follow the walkable route: lead a standoff along the A* path so we curve around
+                // furniture/walls. Falls back to the straight me→target line when no path is available.
+                Vector3 leadPoint;
+                // Lead further along the route than the idle standoff, so it clearly scouts ahead.
+                float pathLeadDist = standoff * 1.8f;
+                if (DeadReckoningPlugin.FollowPath.Value && pathGuide.TryLead(player, live.Value, pathLeadDist, out Vector3 pathLead))
+                {
+                    leadPoint = new Vector3(pathLead.x, a.y, pathLead.z);
+                    // Don't let it wander far from you when you're not heading toward the target: cap how
+                    // far the lead point can sit from the player (straight-line).
+                    Vector3 fromPlayer = leadPoint - a;
+                    float maxLead = standoff * 2.2f;
+                    if (fromPlayer.magnitude > maxLead) leadPoint = a + fromPlayer.normalized * maxLead;
+                }
+                else
+                {
+                    Vector3 b = live.Value + Vector3.up * TrackEyeHeight;
+                    Vector3 to = b - a;
+                    float dist = to.magnitude;
+                    Vector3 dir = dist > 0.001f ? to / dist : FlatDirFromPlayer(skull, player);
+                    float reach = Mathf.Min(standoff, dist * 0.85f); // don't sit on top of a close target
+                    leadPoint = a + dir * reach;
+                }
+
                 // The skull mesh floats above the point we steer; drop the steer-point by that much so
-                // the mesh itself lands on the me→target screen line instead of above it.
-                hover = onLine - Vector3.up * SkullVisualLift();
+                // the mesh itself lands on the lead point instead of above it.
+                hover = leadPoint - Vector3.up * SkullVisualLift();
 
                 // Keep the idle wander angle in sync so the hand-off when tracking drops is smooth.
-                Vector3 flat = dir; flat.y = 0f;
+                Vector3 flat = leadPoint - a; flat.y = 0f;
                 if (flat.sqrMagnitude > 0.0001f) wanderAngle = Mathf.Atan2(flat.z, flat.x) * Mathf.Rad2Deg;
             }
             else
             {
+                pathGuide.Clear();
                 // Idle: lazily drift/wander around the player. This is the "not tracking" tell.
                 float noise = Mathf.PerlinNoise(Time.time * 0.25f, 12.3f) - 0.5f; // -0.5..0.5, smooth
                 wanderAngle += noise * WanderDegPerSec * Time.deltaTime;
@@ -703,13 +1271,22 @@ namespace DeadReckoning
             }
 
             // Cap scales with the player so it always keeps up, plus headroom to catch back up.
-            float cap = Mathf.Max(MaxSpeed, playerSpeed * 1.8f + 3f);
-            Vector3 vel = (hover - skull) * DeadReckoningPlugin.FollowStrength.Value;
-            vel = Vector3.ClampMagnitude(vel, cap);
-            if (DeadReckoningPlugin.Collide.Value)
-                vel = AvoidWalls(skull, vel);
-            if (vel.sqrMagnitude > 0.0001f)
-                active.Mover.Move(vel);
+            if (justSpawned)
+            {
+                // Land it on its spot instantly (while it's still fading in) so it never flies across.
+                active.Mover.Teleport(hover, forceToWalkablePosition: false);
+                justSpawned = false;
+            }
+            else
+            {
+                float cap = Mathf.Max(MaxSpeed, playerSpeed * 1.8f + 3f);
+                Vector3 vel = (hover - skull) * DeadReckoningPlugin.FollowStrength.Value;
+                vel = Vector3.ClampMagnitude(vel, cap);
+                if (DeadReckoningPlugin.Collide.Value)
+                    vel = AvoidWalls(skull, vel);
+                if (vel.sqrMagnitude > 0.0001f)
+                    active.Mover.Move(vel);
+            }
 
             if (DeadReckoningPlugin.VerboseLogging.Value && HasTarget() && Time.time >= nextDebugLog)
             {

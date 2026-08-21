@@ -4,13 +4,16 @@ A floating soul-blob skull that hovers near you and always drifts toward whateve
 tracking — an NPC, a house or place, or a pin you drop on the map. You physically follow it
 instead of reading an icon pinned to the screen edge.
 
-**Status:** 🚧 **In progress — not yet published on Nexus.** Builds clean and auto-deploys to
+**Status:** ✅ **Released — [Nexus mod 144](https://www.nexusmods.com/moonlightpeaks/mods/144)
+(v1.0.0, published 2026-08-21).** Builds clean and auto-deploys to
 `BepInEx/plugins/MoonlightPeaksMods/DeadReckoning`. A replacement for lockyaw's
 [On-screen Quest and Character Tracker](https://www.nexusmods.com/moonlightpeaks/mods/48) (#48).
-This README gets a Nexus link once the mod ships.
 
-Full design, current state, and the open TODO list live in [DESIGN.md](DESIGN.md) — read its
-`SESSION HAND-OFF` section first.
+Release material: [CHANGELOG.md](CHANGELOG.md), [RELEASING.md](RELEASING.md), the Nexus page draft
+([NEXUS.md](NEXUS.md) + paste-ready [nexus-paste.md](nexus-paste.md)), and `screenshots/`. Build the
+archive with `powershell -File pack.ps1` → `dist/DeadReckoning-1.0.0.zip`.
+
+Full design history and background live in [DESIGN.md](DESIGN.md).
 
 For general modding setup see the root docs — especially
 [03-dev-environment.md](../../03-dev-environment.md),

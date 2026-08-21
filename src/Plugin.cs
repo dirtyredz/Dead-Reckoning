@@ -20,10 +20,7 @@ namespace DeadReckoning
         private static bool farSightChecked;
 
         internal static ConfigEntry<bool> Enabled;
-        internal static ConfigEntry<KeyboardShortcut> SpawnKey;
         internal static ConfigEntry<KeyboardShortcut> PickNpcKey;
-        internal static ConfigEntry<KeyboardShortcut> MapTrackKey;
-        internal static ConfigEntry<KeyboardShortcut> ClearTargetKey;
         internal static ConfigEntry<int> SoulblobIndex;
 
         internal static ConfigEntry<float> StandoffDistance;
@@ -31,13 +28,20 @@ namespace DeadReckoning
         internal static ConfigEntry<float> GroundClearance;
         internal static ConfigEntry<float> FollowStrength;
         internal static ConfigEntry<bool> ShowHud;
+        internal static ConfigEntry<float> HudPosX;
+        internal static ConfigEntry<float> HudPosY;
+        internal static ConfigEntry<float> HudFontSize;
         internal static ConfigEntry<bool> Collide;
+        internal static ConfigEntry<bool> FollowPath;
         internal static ConfigEntry<float> MaxLeash;
+
+        internal static ConfigEntry<bool> RecolorFlame;
+        internal static ConfigEntry<string> FlameColor;
 
         internal static ConfigEntry<bool> VerboseLogging;
 
         // Mod Menu reads these out of ConfigDescription.Tags to title its sections.
-        private const string ProofSection = "ModMenu.Section=Floating proof (dev)";
+        private const string ProofSection = "ModMenu.Section=General";
         private const string TuningSection = "ModMenu.Section=Follow tuning";
         private const string DiagnosticsSection = "ModMenu.Section=Diagnostics";
 
@@ -52,33 +56,12 @@ namespace DeadReckoning
                     null,
                     ProofSection, "ModMenu.Label=Enabled"));
 
-            SpawnKey = Config.Bind(
-                "General", "SpawnKey", new KeyboardShortcut(UnityEngine.KeyCode.F9),
-                new ConfigDescription(
-                    "Spawn/despawn a soul blob that hovers and follows you.",
-                    null,
-                    ProofSection, "ModMenu.Label=Spawn / despawn key"));
-
             PickNpcKey = Config.Bind(
-                "General", "PickNpcKey", new KeyboardShortcut(UnityEngine.KeyCode.F8),
+                "General", "PickNpcKey", new KeyboardShortcut(UnityEngine.KeyCode.F6),
                 new ConfigDescription(
                     "Open the game's NPC picker to choose who the skull points toward.",
                     null,
                     ProofSection, "ModMenu.Label=Pick NPC key"));
-
-            MapTrackKey = Config.Bind(
-                "General", "MapTrackKey", new KeyboardShortcut(UnityEngine.KeyCode.F6),
-                new ConfigDescription(
-                    "While the map is open, track the place/house or NPC you're hovering.",
-                    null,
-                    ProofSection, "ModMenu.Label=Track hovered on map key"));
-
-            ClearTargetKey = Config.Bind(
-                "General", "ClearTargetKey", new KeyboardShortcut(UnityEngine.KeyCode.F7),
-                new ConfigDescription(
-                    "Stop tracking — the skull goes back to just hovering near you.",
-                    null,
-                    ProofSection, "ModMenu.Label=Clear target key"));
 
             SoulblobIndex = Config.Bind(
                 "General", "SoulblobIndex", 0,
@@ -125,9 +108,30 @@ namespace DeadReckoning
             ShowHud = Config.Bind(
                 "Tuning", "ShowHud", true,
                 new ConfigDescription(
-                    "Show a small window (top-left) with what the skull is currently tracking.",
+                    "Show on-screen text of what the skull is currently seeking.",
                     null,
-                    TuningSection, "ModMenu.Label=Show tracking window"));
+                    TuningSection, "ModMenu.Label=Show seeking text"));
+
+            HudPosX = Config.Bind(
+                "Tuning", "HudPosX", 0f,
+                new ConfigDescription(
+                    "Seeking text horizontal position: 0 = left edge, 1 = right edge.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    TuningSection, "ModMenu.Label=Seeking text X"));
+
+            HudPosY = Config.Bind(
+                "Tuning", "HudPosY", 0.25f,
+                new ConfigDescription(
+                    "Seeking text vertical position, measured DOWN from the top: 0 = top, 1 = bottom.",
+                    new AcceptableValueRange<float>(0f, 1f),
+                    TuningSection, "ModMenu.Label=Seeking text Y (from top)"));
+
+            HudFontSize = Config.Bind(
+                "Tuning", "HudFontSize", 30f,
+                new ConfigDescription(
+                    "Seeking text font size.",
+                    new AcceptableValueRange<float>(12f, 72f),
+                    TuningSection, "ModMenu.Label=Seeking text size"));
 
             Collide = Config.Bind(
                 "Tuning", "Collide", true,
@@ -135,6 +139,27 @@ namespace DeadReckoning
                     "Stop the skull passing through house walls. Turn off if it ever gets stuck.",
                     null,
                     TuningSection, "ModMenu.Label=Collide with walls"));
+
+            FollowPath = Config.Bind(
+                "Tuning", "FollowPath", true,
+                new ConfigDescription(
+                    "Lead you along the actual walkable route (around furniture/walls) instead of a straight line. Turn off for the old direct-line behaviour.",
+                    null,
+                    TuningSection, "ModMenu.Label=Follow the route"));
+
+            RecolorFlame = Config.Bind(
+                "Tuning", "RecolorFlame", true,
+                new ConfigDescription(
+                    "Recolour the soul blob's flame to a fixed colour (also stops it varying between spawns).",
+                    null,
+                    TuningSection, "ModMenu.Label=Recolour flame"));
+
+            FlameColor = Config.Bind(
+                "Tuning", "FlameColor", "#000000",
+                new ConfigDescription(
+                    "Soul blob flame colour, as a hex code (e.g. #000000 for black). Applied when 'Recolour flame' is on.",
+                    null,
+                    TuningSection, "ModMenu.Label=Flame colour (hex)"));
 
             VerboseLogging = Config.Bind(
                 "Diagnostics", "VerboseLogging", false,
@@ -157,7 +182,7 @@ namespace DeadReckoning
                 Log.LogWarning($"Harmony patching failed (relationship Track button disabled): {e.Message}");
             }
 
-            Log.LogInfo($"{PluginName} {PluginVersion} loaded. Press {SpawnKey.Value} in-game to spawn the floating proof.");
+            Log.LogInfo($"{PluginName} {PluginVersion} loaded. Seek an NPC ({PickNpcKey.Value}) or a place to summon the skull.");
         }
 
         // If the Far Sight zoom mod is installed, make it stand down while our picker/relationship

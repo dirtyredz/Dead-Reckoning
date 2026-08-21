@@ -51,8 +51,18 @@ namespace DeadReckoning
                 if (marker == null) return;
             }
 
-            marker.gameObject.SetActive(true);
+            // While the mouse is really over the card, hide our purple entirely so only the game's native
+            // orange selection shows (no purple bleeding out from underneath). Un-hovered, our purple sits
+            // on top and covers any native orange from the game auto-focusing a tracked card.
+            marker.gameObject.SetActive(!MouseOver(host));
             ApplyNameTint(marker, true);
+        }
+
+        private static bool MouseOver(RectTransform host)
+        {
+            Canvas c = host.GetComponentInParent<Canvas>();
+            Camera cam = (c != null && c.renderMode != RenderMode.ScreenSpaceOverlay) ? c.worldCamera : null;
+            return RectTransformUtility.RectangleContainsScreenPoint(host, UnityEngine.Input.mousePosition, cam);
         }
 
         /// <summary>Clone the card's native selection frame, tint it purple, and strip the components
@@ -64,9 +74,10 @@ namespace DeadReckoning
 
             GameObject clone = Object.Instantiate(native.gameObject, native.parent, false); // sibling; keeps layout
             clone.name = FrameName;
-            // Sit just BEFORE the native frame so the game's orange selection draws on top of us on
-            // hover, and the name plate (which comes after both) still draws on top of everything.
-            clone.transform.SetSiblingIndex(native.GetSiblingIndex());
+            // Sit just AFTER the native frame so our purple draws on top and covers the game's orange when
+            // a tracked card is auto-focused. (While the mouse is over the card we hide our purple in Set,
+            // so the native orange shows alone.) The name plate comes after both, so it stays on top.
+            clone.transform.SetSiblingIndex(native.GetSiblingIndex() + 1);
 
             // Kill the game's own colour driver and show/hide animator so our purple sticks and the
             // frame stays put instead of fading out when nothing is "selecting" it.
