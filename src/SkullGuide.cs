@@ -204,6 +204,7 @@ namespace DeadReckoning
             try
             {
                 NpcConfigAsset targetCfg = null;
+                List<RoomAsset> targetRooms = null;
                 foreach (KeyValuePair<QuestObjectiveNode, QuestObjectivePersistence> kv in QuestObjectives(trackedQuestNode))
                 {
                     QuestObjectiveNode node = kv.Key;
@@ -225,14 +226,20 @@ namespace DeadReckoning
 
                     // b) Fallback: most objectives don't carry an NPC requirement — the target (vendor /
                     // recipient / location) is only the gold-coloured (#FCEBAE) name in the objective
-                    // title, e.g. "Deliver Red Wine to <gold>Orlock</gold>". Resolve that name to an NPC.
+                    // title, e.g. "Deliver Red Wine to <gold>Orlock</gold>" or "Go to the <gold>Town
+                    // Hall</gold>". Resolve that name to an NPC first; if it's not a character, treat it
+                    // as a place and resolve it to that location's rooms (same routing as a map house).
                     if (targetCfg == null)
                     {
                         string name = LastGoldToken(node.GetObjectiveTitle());
-                        if (!string.IsNullOrEmpty(name)) targetCfg = FindNpcByName(name);
+                        if (!string.IsNullOrEmpty(name))
+                        {
+                            targetCfg = FindNpcByName(name);
+                            if (targetCfg == null) targetRooms = ResolveQuestLocation(name);
+                        }
                     }
 
-                    if (targetCfg != null) break;
+                    if (targetCfg != null || targetRooms != null) break;
                 }
 
                 if (targetCfg != null)
@@ -240,6 +247,14 @@ namespace DeadReckoning
                     if (tracked != targetCfg)
                     {
                         tracked = targetCfg; trackedRooms = null; hasPin = false;
+                        cachedRoute = null; nextRouteAt = 0f;
+                    }
+                }
+                else if (targetRooms != null)
+                {
+                    if (tracked != null || !SameRoomSet(trackedRooms, targetRooms))
+                    {
+                        trackedRooms = targetRooms; tracked = null; hasPin = false;
                         cachedRoute = null; nextRouteAt = 0f;
                     }
                 }
@@ -294,6 +309,106 @@ namespace DeadReckoning
             }
             catch { }
             return null;
+        }
+
+        // Cache the last quest-location lookup so the 0.5s refresh doesn't re-scan every tick — the
+        // rooms behind a place name never change, only the name we're resolving does.
+        private string lastQuestLocName;
+        private List<RoomAsset> lastQuestLocRooms;
+
+        /// <summary>Resolve a location name from a quest objective (e.g. "Town Hall") to the rooms that
+        /// make up that place, so the skull routes there like a tracked map house. Prefers the named
+        /// map location marker (matches the map exactly); falls back to any room whose own name matches.
+        /// Null when the name isn't a place we can locate. Cached by name.</summary>
+        private List<RoomAsset> ResolveQuestLocation(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            if (name == lastQuestLocName && lastQuestLocRooms != null) return lastQuestLocRooms;
+            List<RoomAsset> rooms = FindLocationRooms(name);
+            if (rooms != null) { lastQuestLocName = name; lastQuestLocRooms = rooms; } // only cache hits (retry until the map/nav library is ready)
+            return rooms;
+        }
+
+        /// <summary>The rooms of the place whose name matches <paramref name="name"/>. Two passes over
+        /// the map's location markers (exact match wins over a looser contains match), then a room-name
+        /// fallback for places that aren't a labelled map marker.</summary>
+        private static List<RoomAsset> FindLocationRooms(string name)
+        {
+            string want = NormalizeName(name);
+            if (want.Length == 0) return null;
+            try
+            {
+                MapLocationMarker exact = null, loose = null;
+                foreach (MapLocationMarker m in UnityEngine.Object.FindObjectsByType<MapLocationMarker>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                {
+                    if (m == null || m.RoomAssets == null || m.RoomAssets.Count == 0) continue;
+                    foreach (string cand in MarkerNames(m))
+                    {
+                        string got = NormalizeName(cand);
+                        if (got.Length == 0) continue;
+                        if (got == want) { exact = m; break; }
+                        if (loose == null && (got.Contains(want) || want.Contains(got))) loose = m;
+                    }
+                    if (exact != null) break;
+                }
+                MapLocationMarker hit = exact ?? loose;
+                if (hit != null) return hit.RoomAssets.Where(r => r != null).ToList();
+
+                // Fallback: a room whose own name matches (a place with no labelled map marker).
+                if (AddressableLibrary<NavigationLibrary>.Exists)
+                {
+                    var rooms = new List<RoomAsset>();
+                    foreach (NavigationLibrary.RoomData rd in AddressableLibrary<NavigationLibrary>.Instance.Rooms)
+                    {
+                        RoomAsset ra = rd != null ? rd.RoomAsset : null;
+                        if (ra == null) continue;
+                        string rn;
+                        try { rn = ra.GetRoomName(false); } catch { rn = null; }
+                        if (NormalizeName(rn) == want) rooms.Add(ra);
+                    }
+                    if (rooms.Count > 0) return rooms;
+                }
+            }
+            catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Quest location lookup failed: {e.Message}"); }
+            return null;
+        }
+
+        /// <summary>Candidate display names for a map location marker: its shown name, its raw localized
+        /// name (survives the "???" that GetLocationName returns for unvisited rooms), and each room's
+        /// own name.</summary>
+        private static IEnumerable<string> MarkerNames(MapLocationMarker m)
+        {
+            string shown = null;
+            try { shown = m.GetLocationName(); } catch { }
+            if (!string.IsNullOrEmpty(shown)) yield return shown;
+            string raw = null;
+            try { raw = m.LocationName != null ? m.LocationName.GetTranslation() : null; } catch { }
+            if (!string.IsNullOrEmpty(raw)) yield return raw;
+            foreach (RoomAsset ra in m.RoomAssets)
+            {
+                if (ra == null) continue;
+                string rn = null;
+                try { rn = ra.GetRoomName(false); } catch { }
+                if (!string.IsNullOrEmpty(rn)) yield return rn;
+            }
+        }
+
+        /// <summary>Lower-cased, tag-stripped, article-trimmed name for lenient place matching.</summary>
+        private static string NormalizeName(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return string.Empty;
+            s = StripTags(s).Trim().ToLowerInvariant();
+            if (s.StartsWith("the ")) s = s.Substring(4);
+            return s.Trim();
+        }
+
+        private static bool SameRoomSet(List<RoomAsset> a, List<RoomAsset> b)
+        {
+            if (a == null || b == null) return false;
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++)
+                if (!b.Contains(a[i])) return false;
+            return true;
         }
 
         /// <summary>The on-screen objectives list for the tracked quest — completed/failed dimmed and

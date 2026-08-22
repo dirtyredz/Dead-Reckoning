@@ -6,6 +6,30 @@ subsystems, the game types leaned on, and the things that were tried and dropped
 One entry per **released** version, not per build — see
 [12-versioning-and-release.md](../../12-versioning-and-release.md).
 
+## 1.1.0
+
+Quest tracking now seeks **location** objectives, not just NPC ones.
+
+### Fixed
+
+- **A quest objective that points at a place (e.g. "Go to the Town Hall") is now sought.**
+  `RefreshQuestTarget` only ever resolved an objective to an NPC — its required-NPC list, or the
+  gold-coloured (`#FCEBAE`) target name in the title resolved through `FindNpcByName`. A location
+  token resolved to no NPC, so the skull fell back to idle wandering instead of leading there. The
+  1.0.0 notes claimed "target NPC or location"; only the NPC half actually worked.
+
+### Added
+
+- **Place resolution for quest targets** (`ResolveQuestLocation` / `FindLocationRooms`): when the
+  gold token isn't a character, it's matched against the map's `MapLocationMarker`s — exact name
+  first, then a looser contains match — over each marker's shown name, raw localized `LocationName`,
+  and member room names, falling back to any `RoomAsset` whose own `GetRoomName` matches for places
+  with no labelled marker. The resolved rooms drive the existing house/place path: `RoomRouter`
+  leads door-to-door and the skull idles once you're inside. Cached by name (only hits are cached,
+  so it retries until the map / `NavigationLibrary` is loaded), and `SameRoomSet` keeps the route
+  from resetting each refresh tick. As a side effect the tracked quest location now also lights up
+  on the map, the same as a tracked house.
+
 ## 1.0.0
 
 Published as [Nexus mod 144](https://www.nexusmods.com/moonlightpeaks/mods/144) on 2026-08-21.
