@@ -4,7 +4,6 @@ using Chicken.UI;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace DeadReckoning
@@ -67,7 +66,7 @@ namespace DeadReckoning
             // the roomier character screen gets a "Track/Tracking" word beside the icon.
             bool withText = widget.GetComponentInParent<RelationshipListWidget>() == null;
 
-            Transform existing = FindDeep(parent, ButtonName);
+            Transform existing = DRUi.FindDeep(parent, ButtonName);
             DRTrackRef refc = existing != null
                 ? existing.GetComponent<DRTrackRef>()
                 : Build(parent, gift != null ? gift.transform : null, withText);
@@ -270,17 +269,6 @@ namespace DeadReckoning
             if (src.font != null) dst.font = src.font;
             if (src.fontSharedMaterial != null) dst.fontSharedMaterial = src.fontSharedMaterial;
         }
-
-        private static Transform FindDeep(Transform root, string name)
-        {
-            if (root.name == name) return root;
-            for (int i = 0; i < root.childCount; i++)
-            {
-                Transform found = FindDeep(root.GetChild(i), name);
-                if (found != null) return found;
-            }
-            return null;
-        }
     }
 
     /// <summary>Per-button state so the tracked NPC can be re-resolved on refresh.</summary>
@@ -290,31 +278,5 @@ namespace DeadReckoning
         internal Button Button;
         internal Image Icon;
         internal TextMeshProUGUI Label;
-    }
-
-    /// <summary>Smoothly scales a target up while the pointer is over this element — the hover animation.</summary>
-    internal sealed class HoverScale : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
-    {
-        internal Transform Target;
-        private const float HoverScaleAmount = 1.3f;
-        private const float Speed = 14f;
-        private float goal = 1f;
-        private float current = 1f;
-
-        public void OnPointerEnter(PointerEventData e) => goal = HoverScaleAmount;
-        public void OnPointerExit(PointerEventData e) => goal = 1f;
-
-        private void OnDisable()
-        {
-            goal = current = 1f;
-            if (Target != null) Target.localScale = Vector3.one;
-        }
-
-        private void Update()
-        {
-            if (Target == null) return;
-            current = Mathf.Lerp(current, goal, Time.unscaledDeltaTime * Speed);
-            Target.localScale = Vector3.one * current;
-        }
     }
 }

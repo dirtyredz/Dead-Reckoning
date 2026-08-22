@@ -928,7 +928,7 @@ namespace DeadReckoning
             try
             {
                 bool seeking = tracked != null || trackedRooms != null || hasPin || trackedQuestNode != null;
-                Transform existing = FindChildDeep(screen.transform, StopButtonName);
+                Transform existing = DRUi.FindDeep(screen.transform, StopButtonName);
                 if (existing != null) { existing.gameObject.SetActive(seeking); if (!seeking) return; }
                 if (!seeking) return;
                 if (existing != null) return;
@@ -974,17 +974,6 @@ namespace DeadReckoning
                 btn.onClick.AddListener(() => { ClearTarget(); ClosePicker(); });
             }
             catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Stop-seek button failed: {e.Message}"); }
-        }
-
-        private static Transform FindChildDeep(Transform root, string name)
-        {
-            if (root.name == name) return root;
-            for (int i = 0; i < root.childCount; i++)
-            {
-                Transform f = FindChildDeep(root.GetChild(i), name);
-                if (f != null) return f;
-            }
-            return null;
         }
 
         private void OnNpcPicked(PickNpcListWidget widget)

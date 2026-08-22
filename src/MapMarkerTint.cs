@@ -39,28 +39,28 @@ namespace DeadReckoning
             t.Circle = circle; // NPC icons are round → round ping; houses/pins → diamond
 
             // House compact plate + its little down-arrow.
-            Transform houseBg = FindDeep(host, "LayoutContainer")?.Find("Background");
+            Transform houseBg = DRUi.FindDeep(host, "LayoutContainer")?.Find("Background");
             Add(t, houseBg);
             if (houseBg != null) Add(t, houseBg.Find("Arrow"));
 
             // NPC compact plate: the round icon background.
-            AddChild(t, FindDeep(host, "IconContainer"), "Background");
+            AddChild(t, DRUi.FindDeep(host, "IconContainer"), "Background");
 
             // Name banner (both house and NPC have a NameplateWidget): its background + down-arrow.
-            Transform nameplate = FindDeep(host, "NameplateWidget");
+            Transform nameplate = DRUi.FindDeep(host, "NameplateWidget");
             if (nameplate != null)
             {
-                Transform nameBg = FindDeep(nameplate, "Background");
+                Transform nameBg = DRUi.FindDeep(nameplate, "Background");
                 Add(t, nameBg);
                 if (nameBg != null) Add(t, nameBg.Find("Arrow"));
             }
 
             // House expanded popup: ornamental frame, name banner, and its down-arrow.
-            Transform popup = FindDeep(host, "PopupWidget");
+            Transform popup = DRUi.FindDeep(host, "PopupWidget");
             if (popup != null)
             {
-                Add(t, FindDeep(popup, "Frame"));
-                AddChild(t, FindDeep(popup, "TitleContainer"), "Background");
+                Add(t, DRUi.FindDeep(popup, "Frame"));
+                AddChild(t, DRUi.FindDeep(popup, "TitleContainer"), "Background");
                 Transform popupBg = popup.Find("Background");
                 if (popupBg != null) Add(t, popupBg.Find("Arrow"));
             }
@@ -86,17 +86,6 @@ namespace DeadReckoning
                 if (lib.a > 0.001f) baseColor = lib;
             }
             t.Add(img, baseColor, col);
-        }
-
-        private static Transform FindDeep(Transform root, string name)
-        {
-            if (root.name == name) return root;
-            for (int i = 0; i < root.childCount; i++)
-            {
-                Transform found = FindDeep(root.GetChild(i), name);
-                if (found != null) return found;
-            }
-            return null;
         }
     }
 
@@ -172,7 +161,7 @@ namespace DeadReckoning
         {
             if (pingRoot != null) return;
 
-            Transform parent = FindDeep(transform, "VisibilityContainer") ?? transform;
+            Transform parent = DRUi.FindDeep(transform, "VisibilityContainer") ?? transform;
             pingRoot = new GameObject("DR_MarkerPing", typeof(RectTransform));
             var prt = (RectTransform)pingRoot.transform;
             prt.SetParent(parent, worldPositionStays: false);
@@ -218,17 +207,6 @@ namespace DeadReckoning
             foreach (Sprite s in Resources.FindObjectsOfTypeAll<Sprite>())
                 if (s != null && s.name == "Circle") { circleSprite = s; break; }
             return circleSprite;
-        }
-
-        private static Transform FindDeep(Transform root, string name)
-        {
-            if (root.name == name) return root;
-            for (int i = 0; i < root.childCount; i++)
-            {
-                Transform found = FindDeep(root.GetChild(i), name);
-                if (found != null) return found;
-            }
-            return null;
         }
     }
 }

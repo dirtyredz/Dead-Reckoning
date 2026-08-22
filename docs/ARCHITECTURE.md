@@ -69,7 +69,7 @@ forward — smooth as you move. Routes like a land NPC (water-excluded tag mask)
 
 ## Quest tracking
 
-The Quest Log "Seek Quest" button ([QuestTracker.cs](../src/QuestTracker.cs)) calls
+The Quest Log "Seek Quest" button ([QuestTrackButton.cs](../src/QuestTrackButton.cs)) calls
 `SkullGuide.TrackQuest`. Each refresh (`RefreshQuestTarget`, throttled) reads the current in-progress
 objective and finds its target:
 1. The last still-required NPC (`RequiredNpcList` minus `DoneNpcList`), if any.
@@ -89,15 +89,19 @@ same steering path as manual tracking. The HUD echoes the full objectives list.
   (`MapMarkerHighlight`). Tracked-NPC highlight follows them live between their own badge (outdoors)
   and their house badge (indoors).
 
-## Game-integration points (Harmony, all additive Postfixes)
+## Game-integration points (Harmony)
 
-| Patch | Target | Adds |
-|---|---|---|
-| `RelationshipDailyActivitiesWidgetSetupPatch` | `RelationshipDailyActivitiesWidget.Setup` | Track pin in the daily-activity row |
-| `QuestScreenShowInfoPatch` | `QuestScreen.ShowQuestInfo` | "Seek Quest" button |
-| `InputMouseScrollDeltaPatch` | `Input.MouseScrollDelta` getter | zeroes scroll while our menus are open |
-| `GameCameraZoomBlockPatch` | `GameCamera.ProcessPlayerCameraToggle` | skips the game's zoom-toggle while our menus are open |
-| `FarSightCoexistPatch` | `FarSightPlugin.IsGameplay` (reflection, only if installed) | makes Far Sight stand down over our menus |
+Two categories. The **UI-injection** patches are additive Postfixes that only add UI; the
+**camera-coexistence** patches deliberately suppress input (a Prefix and a value-replacing Postfix)
+while our menus are open — not additive, on purpose.
+
+| Patch | Kind | Target | Effect |
+|---|---|---|---|
+| `RelationshipDailyActivitiesWidgetSetupPatch` | Postfix (additive) | `RelationshipDailyActivitiesWidget.Setup` | adds the Track pin to the daily-activity row |
+| `QuestScreenShowInfoPatch` | Postfix (additive) | `QuestScreen.ShowQuestInfo` | adds the "Seek Quest" button |
+| `InputMouseScrollDeltaPatch` | Postfix (value-replacing) | `Input.MouseScrollDelta` getter | zeroes scroll while our menus are open |
+| `GameCameraZoomBlockPatch` | **Prefix (skips)** | `GameCamera.ProcessPlayerCameraToggle` | skips the game's zoom-toggle while our menus are open |
+| `FarSightCoexistPatch` | Postfix (reflection, only if installed) | `FarSightPlugin.IsGameplay` | makes Far Sight stand down over our menus |
 
 The Far Sight patch is attached lazily from `SkullGuide`'s first `Update` because Far Sight loads
 *after* us (see [GOTCHAS.md](GOTCHAS.md)).

@@ -32,7 +32,7 @@ namespace DeadReckoning
             var host = widget.transform as RectTransform;
             if (host == null) return;
 
-            Transform existing = FindDeep(host, FrameName);
+            Transform existing = DRUi.FindDeep(host, FrameName);
             var marker = existing != null ? existing.GetComponent<DRFrameMarker>() : null;
 
             if (!on)
@@ -69,7 +69,7 @@ namespace DeadReckoning
         /// that would re-tint or fade it. Returns null if the card has no selection frame to clone.</summary>
         private static DRFrameMarker BuildClone(RectTransform host)
         {
-            Transform native = FindDeep(host, "SelectionContainer"); // named clone excluded (it's FrameName)
+            Transform native = DRUi.FindDeep(host, "SelectionContainer"); // named clone excluded (it's FrameName)
             if (native == null) return null;
 
             GameObject clone = Object.Instantiate(native.gameObject, native.parent, false); // sibling; keeps layout
@@ -97,7 +97,7 @@ namespace DeadReckoning
 
             // Capture the name plate (and the card's button, to yield to native hover) so we can
             // recolour it like the real selection and revert cleanly.
-            Transform nameContainer = FindDeep(host, "NameContainer");
+            Transform nameContainer = DRUi.FindDeep(host, "NameContainer");
             Transform bg = nameContainer != null ? nameContainer.Find("Background") : null;
             if (bg != null)
             {
@@ -135,17 +135,6 @@ namespace DeadReckoning
         private static bool SafeIsSelected(AnimatedButton b)
         {
             try { return b.IsSelected; } catch { return false; }
-        }
-
-        private static Transform FindDeep(Transform root, string name)
-        {
-            if (root.name == name) return root;
-            for (int i = 0; i < root.childCount; i++)
-            {
-                Transform found = FindDeep(root.GetChild(i), name);
-                if (found != null) return found;
-            }
-            return null;
         }
     }
 

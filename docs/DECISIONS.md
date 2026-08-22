@@ -3,12 +3,14 @@
 Design/architecture decisions and their rationale, newest first. Rejected alternatives kept so we
 don't re-litigate them.
 
-## ADR-010 — Additive-only Harmony integration
-All game-integration patches are **Postfixes that only add UI** (`RelationshipDailyActivitiesWidget.
-Setup`, `QuestScreen.ShowQuestInfo`). The existing tracking path is never mutated by button code;
-buttons call `SkullGuide.Instance` mirror methods (`ToggleTrack`, `ToggleQuest`). Keeps the working
-F-key/picker flow intact and makes the mod resilient to game updates. **Rejected:** transpilers /
-prefixes into the game's own flow.
+## ADR-010 — Additive UI integration; input suppression only where required
+**UI integration** is additive Postfixes that only add UI (`RelationshipDailyActivitiesWidget.Setup`,
+`QuestScreen.ShowQuestInfo`); the existing tracking path is never mutated, and buttons call
+`SkullGuide.Instance` mirror methods (`ToggleTrack`, `ToggleQuest`). This keeps the F-key/picker flow
+intact and resilient to game updates. **Camera coexistence is the deliberate exception:** to stop the
+world camera zooming over our menus we use a Prefix that skips `GameCamera.ProcessPlayerCameraToggle`
+and a value-replacing Postfix on the scroll getter — suppressing input is the whole point there, so
+those are *not* additive. **Rejected:** transpilers, and prefixes into the game's own *tracking* flow.
 
 ## ADR-009 — Feedback is behaviour + HUD, not a floating label
 The skull *leads* when it has a fix and *idles/wanders* when it doesn't — that motion is the primary
