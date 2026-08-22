@@ -13,3 +13,7 @@ dist/
 # Decompiled game code must never be committed - it is derived from the shipped game.
 # Keep it in a scratch directory outside the repo.
 decompiled/
+
+# Structure-review gate markers (local state, not source)
+.structure-review-pending
+.structure-review-paused

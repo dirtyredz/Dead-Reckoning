@@ -5,9 +5,19 @@ mod pins a directional icon to the screen edge, Dead Reckoning spawns a **floati
 the player physically follows: it hovers a few feet away and always drifts toward whatever is
 being tracked.
 
-## SESSION HAND-OFF (2026-08-20) — read this first
-**Status:** v0.x work-in-progress, builds clean, auto-deploys to
-`…/BepInEx/plugins/MoonlightPeaksMods/DeadReckoning`. Latest build installed. NOT yet released to Nexus.
+> **⚠ HISTORICAL RECORD (as of 2026-08-22).** This file is the original session-by-session design
+> hand-off, kept for its research and rationale. It is **no longer the source of truth** — the mod
+> is **released as [Nexus mod 144](https://www.nexusmods.com/moonlightpeaks/mods/144), v1.1.0**, and
+> current state now lives in the doc set: [STRUCTURE.md](STRUCTURE.md),
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [DECISIONS.md](docs/DECISIONS.md),
+> [FEATURES.md](docs/FEATURES.md), [GOTCHAS.md](docs/GOTCHAS.md), [BACKLOG.md](docs/BACKLOG.md).
+> The dates and "not yet released / TODO" notes below reflect the state *at the time they were
+> written*, not today.
+
+## SESSION HAND-OFF (2026-08-20) — historical
+**Status (2026-08-20):** was v0.x work-in-progress, builds clean, auto-deploys to
+`…/BepInEx/plugins/MoonlightPeaksMods/DeadReckoning`. *(Since released to Nexus at v1.0.0 on
+2026-08-21; quest tracking added in v1.1.0.)*
 
 **Working & confirmed in-game:** spawn skull soul blob (F9); NPC tracking (F8 native picker + a Track
 button on each Relationships card); house/place tracking + free pin from the map (F6 while map open —
