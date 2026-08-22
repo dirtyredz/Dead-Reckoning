@@ -20,7 +20,7 @@ namespace DeadReckoning
     /// <c>ColorLibrary.GetColor</c>, not a hover snapshot — on untrack. Map markers are handled
     /// separately by <see cref="MapMarkerTint"/> (they have no cloneable selection frame).
     /// </summary>
-    internal static class MapMarkerHighlight
+    internal static class PickerCardHighlight
     {
         private const string FrameName = "DR_TrackFrame";
         private const float NativeOutset = 6f; // push the frame a touch outside the card

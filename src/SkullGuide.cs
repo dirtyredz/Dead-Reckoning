@@ -589,7 +589,7 @@ namespace DeadReckoning
                             pickerProbed = true;
                             try { DumpPickerCard(w); } catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Picker probe failed: {e.Message}"); }
                         }
-                        MapMarkerHighlight.Set(w, SameNpc(w.Data, tracked));
+                        PickerCardHighlight.Set(w, SameNpc(w.Data, tracked));
                     }
                 }
             }
@@ -1227,16 +1227,6 @@ namespace DeadReckoning
             catch { return false; }
         }
 
-        private static Vector3? RouteToNearestRoom(RoomAsset current, List<RoomAsset> rooms)
-        {
-            for (int i = 0; i < rooms.Count; i++)
-            {
-                Vector3? door = RoomRouter.DoorToward(current, rooms[i]);
-                if (door.HasValue) return door;
-            }
-            return null;
-        }
-
         private static bool RelationshipPanelOpen()
         {
             try
@@ -1422,7 +1412,7 @@ namespace DeadReckoning
                 if (Time.time >= nextRouteAt)
                 {
                     nextRouteAt = Time.time + 0.4f;
-                    cachedRoute = RouteToNearestRoom(cur, trackedRooms);
+                    cachedRoute = RoomRouter.DoorTowardFirstReachable(cur, trackedRooms);
                 }
                 return cachedRoute;
             }

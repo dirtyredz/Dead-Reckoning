@@ -9,6 +9,9 @@ see [../STRUCTURE.md](../STRUCTURE.md) "Structural debt".
 - Extracted `HoverScale` out of `RelationshipTrackButton.cs` into `HoverScale.cs`.
 - Renamed `QuestTracker.cs` → `QuestTrackButton.cs` (matches its class; the file is button UI, not
   tracking logic).
+- Moved `RouteToNearestRoom` → `RoomRouter.DoorTowardFirstReachable` (accurate name; belongs with the
+  routing logic).
+- Renamed `MapMarkerHighlight.cs` → `PickerCardHighlight.cs` (it highlights NPC picker cards).
 
 ## P0
 _(none)_
@@ -39,26 +42,23 @@ shrinks the next one's diff). All are backlog, not drive-by — they change beha
    `TrackedNpcRoom`, `IsTrackingRooms`, `UpdateMapPin`, `MapMarkerOverlay`, `UpdateHud` — the per-frame
    scanning of markers/picker cards and HUD/pin presentation. Feed it an immutable tracking snapshot.
 5. **Target resolution → `TargetResolver`.** The room-coordinate / live-NPC / door-routing / route-
-   cache logic in `TrackedWorldPos` (+ `PinWorld`, `RouteToNearestRoom`) so `Steer` consumes only a
-   `Point`/`Arrived`/`Unavailable` result.
+   cache logic in `TrackedWorldPos` (+ `PinWorld`; routing already delegates to
+   `RoomRouter.DoorTowardFirstReachable`) so `Steer` consumes only a `Point`/`Arrived`/`Unavailable`
+   result.
 
 After those cuts `SkullGuide` becomes what its name promises: skull lifecycle + update orchestration
 + the steering pipeline.
 
 ## P2 — smaller structural items
 
-- **`RouteToNearestRoom` → `RoomRouter`** and rename to `DoorTowardFirstReachable` (it returns the
-  first routable room in list order, not the nearest). Cheap mechanical move.
 - **`DRMarkerTint` parallel lists → one binding type** (`List<TintBinding>` holding `Image` + base
   `Color` + optional `UIColorable`), removing another positional invariant. Cheap.
-- **Rename `MapMarkerHighlight.cs` → `PickerCardHighlight.cs`** — it highlights NPC picker cards, not
-  map markers. (Class rename touches its call sites in `SkullGuide`.)
 - **`PingWaves` shared animator** — the ripple math in `MapPin` and `DRMarkerTint` is identical.
   Extract a narrow helper *only if* a third consumer appears; don't merge the two highlight systems
-  (`MapMarkerHighlight`/`MapMarkerTint` solve genuinely different problems).
+  (`PickerCardHighlight`/`MapMarkerTint` solve genuinely different problems).
 - **Narrow facade + `Changed` event** to replace the `SkullGuide.Instance` service-locator the
   injected buttons depend on (kills `RefreshAll`'s scene-scan). Do after the target model lands.
-- **Reconcile the `ColorLibrary` base-colour read** duplicated in `MapMarkerHighlight`/`MapMarkerTint`
+- **Reconcile the `ColorLibrary` base-colour read** duplicated in `PickerCardHighlight`/`MapMarkerTint`
   — extract only after checking the zero-alpha guard difference between them is intentional.
 - **Compatibility/input ownership** — move lazy Far Sight discovery + relationship-panel polling out
   of `SkullGuide` into a plugin-owned compatibility component; camera coexistence isn't skull steering.

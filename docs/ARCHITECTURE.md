@@ -86,7 +86,7 @@ same steering path as manual tracking. The HUD echoes the full objectives list.
   quest objectives list, with a ✕ to stop.
 - **Map** — free pin gets a red diamond + ping (`MapPin`); a tracked house/NPC badge is recoloured +
   pinged (`MapMarkerTint`); the NPC picker card gets the native selection frame cloned purple
-  (`MapMarkerHighlight`). Tracked-NPC highlight follows them live between their own badge (outdoors)
+  (`PickerCardHighlight`). Tracked-NPC highlight follows them live between their own badge (outdoors)
   and their house badge (indoors).
 
 ## Game-integration points (Harmony)

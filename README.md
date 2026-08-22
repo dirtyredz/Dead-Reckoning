@@ -43,7 +43,7 @@ mods/DeadReckoning/
     ├── Plugin.cs      <- BepInEx entry point
     ├── SkullGuide.cs  <- the soul-blob skull and its steering
     ├── RoomRouter.cs  <- cross-room routing
-    ├── MapPin.cs / MapMarkerHighlight.cs / MapMarkerTint.cs  <- map pin + badge visuals
+    ├── MapPin.cs / PickerCardHighlight.cs / MapMarkerTint.cs <- map pin + badge/card visuals
     ├── TrackHud.cs / RelationshipTrackButton.cs              <- tracking HUD + card button
     └── CameraScrollPatch.cs                                  <- Far Sight scroll coexistence
 ```

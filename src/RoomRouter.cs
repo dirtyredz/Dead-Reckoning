@@ -14,6 +14,20 @@ namespace DeadReckoning
     /// </summary>
     internal static class RoomRouter
     {
+        /// <summary>World position of the door heading toward the FIRST room in <paramref name="rooms"/>
+        /// (list order) that we can route to from <paramref name="current"/>, or null if none is
+        /// reachable. Used for a multi-room place target — any of its rooms will do.</summary>
+        internal static Vector3? DoorTowardFirstReachable(RoomAsset current, List<RoomAsset> rooms)
+        {
+            if (rooms == null) return null;
+            for (int i = 0; i < rooms.Count; i++)
+            {
+                Vector3? door = DoorToward(current, rooms[i]);
+                if (door.HasValue) return door;
+            }
+            return null;
+        }
+
         /// <summary>World position of the door heading toward <paramref name="target"/>, or null.</summary>
         internal static Vector3? DoorToward(RoomAsset current, RoomAsset target)
         {

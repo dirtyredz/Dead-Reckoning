@@ -26,7 +26,7 @@ Ships two files: `DeadReckoning.dll` + `track-icon.png`.
 | **In-room pathing** | `src/PathGuide.cs` | Wraps the game's A* Pathfinding graph: a lead point a set distance along the walkable path to the target. |
 | **Seeking HUD** | `src/TrackHud.cs` | Screen-space overlay: "Seeking: X" / the quest objectives list, with a ✕ stop control. Owns its canvas + Gelica font lookup. |
 | **Map free-pin marker** | `src/MapPin.cs` | Red diamond + white ping waves drawn on the map at the pinned spot. |
-| **Picker card highlight** | `src/MapMarkerHighlight.cs` | Clones the NPC picker card's native selection frame, recoloured purple, + name-plate tint. |
+| **Picker card highlight** | `src/PickerCardHighlight.cs` | Clones the NPC picker card's native selection frame, recoloured purple, + name-plate tint. |
 | **Map badge highlight** | `src/MapMarkerTint.cs` | Recolours a tracked house/NPC map badge + adds ping waves (`DRMarkerTint` behaviour). |
 | **Relationships Track button** | `src/RelationshipTrackButton.cs` | Harmony patch on `RelationshipDailyActivitiesWidget.Setup` → a Track pin in the daily-activity row (`DRTrackRef`). |
 | **Quest Log Track button** | `src/QuestTrackButton.cs` | Harmony patch on `QuestScreen.ShowQuestInfo` → a "Seek Quest" button (`DRQuestButton`). |
@@ -37,7 +37,7 @@ Ships two files: `DeadReckoning.dll` + `track-icon.png`.
 ## Dependencies (direction of reference)
 
 ```
-Plugin ──creates──▶ SkullGuide ──owns──▶ TrackHud, MapPin, MapMarkerHighlight,
+Plugin ──creates──▶ SkullGuide ──owns──▶ TrackHud, MapPin, PickerCardHighlight,
    │                    │                 MapMarkerTint, PathGuide, RoomRouter
    │                    └── reads config + Log from ◀── Plugin
    ├──PatchAll──▶ RelationshipTrackButton ─▶ SkullGuide.Instance, TrackIcon, HoverScale
@@ -84,6 +84,10 @@ pass). Full triage with priorities in [docs/BACKLOG.md](docs/BACKLOG.md).
   generic UI behaviour with four callers).
 - ✅ **`QuestTracker.cs` renamed** to `QuestTrackButton.cs` to match its contents (the Quest Log
   button UI, not the quest-tracking logic, which lives in `SkullGuide`).
+- ✅ **`RouteToNearestRoom` moved** from `SkullGuide` into `RoomRouter.DoorTowardFirstReachable`
+  (accurate name — it returns the first *reachable* room in list order, not the nearest).
+- ✅ **`MapMarkerHighlight.cs` renamed** to `PickerCardHighlight.cs` — it highlights NPC picker
+  cards, not map markers.
 
 **Open — the big one (backlogged, needs its own focused passes; do NOT drive-by):**
 - **`SkullGuide.cs` is a ~1580-line God-file** (~2× the 800-line cap) spanning ~9 responsibilities.
@@ -109,13 +113,8 @@ pass). Full triage with priorities in [docs/BACKLOG.md](docs/BACKLOG.md).
   target model is extracted. **P2.**
 - `DRMarkerTint` holds three positionally-coupled parallel lists (`imgs`/`bases`/`cols`) — fold into
   one binding type. **P2, cheap.**
-- `RouteToNearestRoom` lives in `SkullGuide` but belongs in `RoomRouter`, and is misnamed (returns the
-  *first routable* room, not the nearest). **P2, cheap.**
-- `MapMarkerHighlight.cs` is itself misnamed — it highlights NPC *picker cards*, not map markers.
-  Consider `PickerCardHighlight.cs`. **P2.**
 - The **ping-wave animation** is duplicated between `MapPin` and `DRMarkerTint` (`MapMarkerTint`) —
-  identical ripple math. A narrow `PingWaves` helper is the real shared seam (the earlier note that
-  `MapMarkerHighlight` shares it was wrong — it has no ping). Extract only if a third consumer
-  appears. **P2.**
+  identical ripple math. A narrow `PingWaves` helper is the real shared seam (`PickerCardHighlight`
+  has no ping). Extract only if a third consumer appears. **P2.**
 
 _Living doc — refresh with /project-docs when it drifts._
