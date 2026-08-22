@@ -11,7 +11,7 @@
 
     GENERATED FILE - do not edit in a single mod. This is a verbatim copy of
     tools/pack.template.ps1 in the workspace. To change packing behaviour, edit the template and run
-    tools/sync-pack.ps1 to re-distribute it to every mod.
+    tools/sync-mod-files.ps1 to re-distribute it to every mod.
 
     There is generally no test project to run: most code paths read Unity/game types a console runner
     cannot exercise. Per-mod verification lives in each mod's TESTING.md.
