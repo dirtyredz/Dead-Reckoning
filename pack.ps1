@@ -1,62 +1,61 @@
 <#
     Builds a release archive laid out the way Nexus and Vortex expect:
 
-        BepInEx/plugins/DeadReckoning/DeadReckoning.dll
-        BepInEx/plugins/DeadReckoning/track-icon.png
+        BepInEx/plugins/<ModName>/<ModName>.dll
 
-    Deliberately not the dev deploy path (plugins/MoonlightPeaksMods/DeadReckoning), which only
-    exists to keep hand-built DLLs clear of Vortex during development.
+    <ModName> is taken from the single .csproj under src/, so this script is generic: the same bytes
+    work in every mod, whether it sits under mods/ in the Moonlight Peaks workspace or at the root of
+    its own standalone repo. Deliberately not the dev deploy path
+    (plugins/MoonlightPeaksMods/<ModName>), which only exists to keep hand-built DLLs clear of Vortex
+    during development.
 
-    Unlike the sibling mods, this one ships a second file: track-icon.png sits beside the DLL and
-    is loaded at runtime for the Relationships "Track" button (see DRIcons / RelationshipTrackButton).
-    The DeployPlugin target in the csproj copies it to the dev folder; this script puts it in the
-    archive so players get it too. If it is ever missing the button silently falls back to text.
+    GENERATED FILE - do not edit in a single mod. This is a verbatim copy of
+    tools/pack.template.ps1 in the workspace. To change packing behaviour, edit the template and run
+    tools/sync-pack.ps1 to re-distribute it to every mod.
 
-    No test project for this mod: every code path reads Unity and live game state - the soul-blob
-    critter, Harmony patches, the map widgets, A* pathfinding - none of which a headless runner can
-    assert. The checklist in RELEASING.md carries the weight here.
+    There is generally no test project to run: most code paths read Unity/game types a console runner
+    cannot exercise. Per-mod verification lives in each mod's TESTING.md.
 #>
 
 $ErrorActionPreference = 'Stop'
 
 $modRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$project = Join-Path $modRoot 'src\DeadReckoning.csproj'
-$icon    = Join-Path $modRoot 'assets\track-icon.png'
 
-# This mod lives in two places: on its own as its own repo, and inside the notes monorepo under
-# mods/DeadReckoning. dist/ belongs at the repo root in both, so work out which layout is in play
-# rather than assuming one.
-$parentName = Split-Path -Leaf (Split-Path -Parent $modRoot)
-if ($parentName -eq 'mods') {
-    $repoRoot = Split-Path -Parent (Split-Path -Parent $modRoot)
-} else {
-    $repoRoot = $modRoot
-}
+# The single project under src/ names the mod: src/<ModName>.csproj -> <ModName>. Require exactly
+# one, so a stray second project can never be packaged nondeterministically.
+$projects = @(Get-ChildItem -Path (Join-Path $modRoot 'src') -Filter '*.csproj' -File)
+if ($projects.Count -eq 0) { throw "No .csproj found under $(Join-Path $modRoot 'src')" }
+if ($projects.Count -gt 1) { throw "Expected exactly one .csproj under src/, found $($projects.Count): $($projects.Name -join ', ')" }
+$project = $projects[0]
+$modName = [System.IO.Path]::GetFileNameWithoutExtension($project.Name)
+
+# "ModNook" -> "Mod Nook", "PurrtasticPalette" -> "Purrtastic Palette" (cosmetic, for the log line).
+$displayName = [regex]::Replace($modName, '([a-z])([A-Z])', '$1 $2')
 
 # Single source of truth for the version, so the archive can never disagree with the DLL.
-$version = ([xml](Get-Content $project)).Project.PropertyGroup.Version | Where-Object { $_ }
-if (-not $version) { throw "Could not read <Version> from $project" }
+$version = @(([xml](Get-Content $project.FullName)).Project.PropertyGroup.Version | Where-Object { $_ })
+if ($version.Count -ne 1) { throw "Expected exactly one non-empty <Version> in $($project.FullName), found $($version.Count)" }
+$version = $version[0]
 
-Write-Host "Packing Dead Reckoning $version"
+Write-Host "Packing $displayName $version"
 
 # SkipDeploy keeps a release build from overwriting the copy under test in the game folder.
-dotnet build $project -c Release -p:SkipDeploy=true
+dotnet build $project.FullName -c Release -p:SkipDeploy=true
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 
-$dll = Join-Path $modRoot 'src\bin\Release\netstandard2.1\DeadReckoning.dll'
-if (-not (Test-Path $dll))  { throw "Built DLL not found at $dll" }
-if (-not (Test-Path $icon)) { throw "Track-button icon not found at $icon" }
+$dll = Join-Path $modRoot "src\bin\Release\netstandard2.1\$modName.dll"
+if (-not (Test-Path $dll)) { throw "Built DLL not found at $dll" }
 
-$staging = Join-Path $env:TEMP "DeadReckoning-pack-$([guid]::NewGuid().ToString('N'))"
-$target  = Join-Path $staging 'BepInEx\plugins\DeadReckoning'
+$staging = Join-Path $env:TEMP "$modName-pack-$([guid]::NewGuid().ToString('N'))"
+$target  = Join-Path $staging "BepInEx\plugins\$modName"
 New-Item -ItemType Directory -Force -Path $target | Out-Null
-Copy-Item $dll  $target
-Copy-Item $icon $target
+Copy-Item $dll $target
 
-$dist = Join-Path $repoRoot 'dist'
+# The mod always gets its own dist/, which is correct when the repo is cloned standalone.
+$dist = Join-Path $modRoot 'dist'
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
-$archive = Join-Path $dist "DeadReckoning-$version.zip"
+$archive = Join-Path $dist "$modName-$version.zip"
 if (Test-Path $archive) { Remove-Item $archive }
 
 Compress-Archive -Path (Join-Path $staging 'BepInEx') -DestinationPath $archive
@@ -64,3 +63,22 @@ Remove-Item $staging -Recurse -Force
 
 Write-Host "Created $archive"
 Write-Host 'Extract it over the game folder to install.'
+
+# Convenience for the workspace only: sibling mods collect their archives in one shared dist/ two
+# levels up. The guard is that the parent folder is literally named "mods" and a dist/ already exists
+# beside it, neither of which is true for someone who clones this mod on its own.
+$parent = Split-Path -Parent $modRoot
+if ((Split-Path -Leaf $parent) -eq 'mods') {
+    $sharedDist = Join-Path (Split-Path -Parent $parent) 'dist'
+
+    if ((Test-Path $sharedDist -PathType Container) -and ((Resolve-Path $sharedDist).Path -ne (Resolve-Path $dist).Path)) {
+        try {
+            Copy-Item $archive $sharedDist -Force
+            Write-Host "Also copied to $sharedDist"
+        }
+        catch {
+            # A convenience copy failing must not fail the pack - the real archive already exists.
+            Write-Warning "Could not copy to $sharedDist : $($_.Exception.Message)"
+        }
+    }
+}
