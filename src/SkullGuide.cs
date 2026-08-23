@@ -1385,16 +1385,19 @@ namespace DeadReckoning
             else
             {
                 pathGuide.Clear();
-                // Idle = "not seeking": loosely seek *you*. Home toward the player (not a fixed offset
-                // or side) so the velocity clamp below makes it lag when you move and drift back in when
-                // you stop — free-floating and relaxed. A slow organic sway keeps it from locking onto a
-                // single point. This reads as "following me" vs. seeking's lead-ahead-toward-the-target.
+                // Idle = "not seeking": settle on the nearest point of a sphere around you, in whatever
+                // HORIZONTAL direction the skull currently sits — so if you run north and it lags to your
+                // south, it settles to your south instead of flying over your head to one fixed spot. The
+                // spring-damper below still gives it the lag + rebound. Direction is flattened so the rest
+                // point stays at hover height regardless of the skull's current altitude.
                 float t = Time.time;
-                Vector3 sway = new Vector3(Mathf.PerlinNoise(t * 0.13f, 4.7f) - 0.5f,
-                                           0f,
-                                           Mathf.PerlinNoise(9.1f, t * 0.13f) - 0.5f) * (standoff * 0.5f);
-                float h = height + Mathf.Sin(t * 1.3f) * 0.15f; // gentle vertical bob
-                hover = player + sway + Vector3.up * h;
+                Vector3 center = player + Vector3.up * (height + Mathf.Sin(t * 1.3f) * 0.15f); // gentle bob
+                Vector3 flatFrom = skull - center; flatFrom.y = 0f;
+                Vector3 dir;
+                if (flatFrom.sqrMagnitude > 0.01f) dir = flatFrom.normalized;
+                else { dir = PlayerForwardIsh(); dir.y = 0f; dir = -dir.normalized; } // fallback: behind you
+                float radius = standoff + (Mathf.PerlinNoise(t * 0.13f, 4.7f) - 0.5f) * (standoff * 0.4f); // breathe
+                hover = center + dir * radius;
             }
 
             // Ride above the surface beneath the skull (terrain, bridge deck) so it follows a bridge
