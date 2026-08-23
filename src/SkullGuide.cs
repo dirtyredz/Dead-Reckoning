@@ -58,7 +58,6 @@ namespace DeadReckoning
         private const string PickerBlockId = "DeadReckoningNpcPicker";
 
         private const float MaxSpeed = 14f;        // floor; the real cap scales with player speed
-        private const float WanderDegPerSec = 35f; // lazy drift speed around the player when idle
         private Vector3 lastPlayerPos;
         private bool hasLastPlayer;
         private float playerSpeed;
@@ -70,7 +69,8 @@ namespace DeadReckoning
         private static int envMask = -1;           // obstacle layers (walls), NOT ground/water/bridge
         private static int groundMask = -1;        // ground/terrain/bridge deck the skull hovers above
         private float nextProbe;
-        private float wanderAngle;
+        private bool idleAnchored;      // idle = park in place (not tracking); the leash drags it along
+        private Vector3 idleAnchor;     // the world spot it holds while idle
         private float nextDebugLog;
 
         private Vector3? cachedRoute; // door-to-head-toward for an off-room target
@@ -797,7 +797,7 @@ namespace DeadReckoning
             active = view;
             skullVisualLift = -1f; // re-measure the mesh's float offset for this instance
             hasLastPlayer = false; playerSpeed = 0f;
-            wanderAngle = Mathf.Atan2(fwd.z, fwd.x) * Mathf.Rad2Deg; // start idle drift from where it spawned
+            idleAnchored = false; // park fresh wherever it settles when it next goes idle
 
             if (DeadReckoningPlugin.VerboseLogging.Value) { try { DumpBlob(view); } catch { } }
             try { CacheFlame(view); ApplyFlameColor(); } catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Flame recolour failed: {e.Message}"); }
@@ -1341,6 +1341,7 @@ namespace DeadReckoning
                                 + Vector3.up * DeadReckoningPlugin.HoverHeight.Value;
                 active.Mover.Teleport(reset, forceToWalkablePosition: false);
                 cachedRoute = null; nextRouteAt = 0f;
+                idleAnchor = reset; idleAnchored = true; // if idle, hold here (beside you) after the drag catches up
                 return;
             }
 
@@ -1384,21 +1385,18 @@ namespace DeadReckoning
                 // the mesh itself lands on the lead point instead of above it.
                 hover = leadPoint - Vector3.up * SkullVisualLift();
 
-                // Keep the idle wander angle in sync so the hand-off when tracking drops is smooth.
-                Vector3 flat = leadPoint - a; flat.y = 0f;
-                if (flat.sqrMagnitude > 0.0001f) wanderAngle = Mathf.Atan2(flat.z, flat.x) * Mathf.Rad2Deg;
+                idleAnchored = false; // re-park fresh next time tracking drops
             }
             else
             {
                 pathGuide.Clear();
-                // Idle: lazily drift/wander around the player. This is the "not tracking" tell.
-                float noise = Mathf.PerlinNoise(Time.time * 0.25f, 12.3f) - 0.5f; // -0.5..0.5, smooth
-                wanderAngle += noise * WanderDegPerSec * Time.deltaTime;
-                float rad = wanderAngle * Mathf.Deg2Rad;
-                Vector3 wanderDir = new Vector3(Mathf.Cos(rad), 0f, Mathf.Sin(rad));
-                float s = standoff + Mathf.Sin(Time.time * 0.7f) * 0.4f;  // gentle breathe in/out
-                float h = height + Mathf.Sin(Time.time * 1.3f) * 0.15f;   // gentle vertical drift
-                hover = player + wanderDir * s + Vector3.up * h;
+                // Idle = "not seeking": park in place instead of trailing you at a standoff, so it's
+                // obvious the skull isn't leading anywhere — you walk off and leave it behind, and the
+                // leash above drags it back to you only once you're far enough. It holds the spot it
+                // was at when tracking dropped, with a gentle vertical bob so it still reads as alive.
+                if (!idleAnchored) { idleAnchor = skull; idleAnchored = true; }
+                float bob = Mathf.Sin(Time.time * 1.3f) * 0.15f;
+                hover = new Vector3(idleAnchor.x, idleAnchor.y + bob, idleAnchor.z);
             }
 
             // Ride above the surface beneath the skull (terrain, bridge deck) so it follows a bridge
