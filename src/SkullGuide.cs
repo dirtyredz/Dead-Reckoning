@@ -1384,12 +1384,16 @@ namespace DeadReckoning
             else
             {
                 pathGuide.Clear();
-                // Idle = "not seeking": follow smoothly at your side instead of leading ahead. Sitting
-                // beside you (not out in front pointing the way) is the "not seeking" tell, and the
-                // steady Move below keeps it gliding along — no wander, no snap-back.
-                Vector3 side = Vector3.Cross(Vector3.up, PlayerForwardIsh()).normalized; // player's right
-                float h = height + Mathf.Sin(Time.time * 1.3f) * 0.15f;                  // gentle vertical bob
-                hover = player + side * standoff + Vector3.up * h;
+                // Idle = "not seeking": loosely seek *you*. Home toward the player (not a fixed offset
+                // or side) so the velocity clamp below makes it lag when you move and drift back in when
+                // you stop — free-floating and relaxed. A slow organic sway keeps it from locking onto a
+                // single point. This reads as "following me" vs. seeking's lead-ahead-toward-the-target.
+                float t = Time.time;
+                Vector3 sway = new Vector3(Mathf.PerlinNoise(t * 0.13f, 4.7f) - 0.5f,
+                                           0f,
+                                           Mathf.PerlinNoise(9.1f, t * 0.13f) - 0.5f) * standoff;
+                float h = height + Mathf.Sin(t * 1.3f) * 0.15f; // gentle vertical bob
+                hover = player + sway + Vector3.up * h;
             }
 
             // Ride above the surface beneath the skull (terrain, bridge deck) so it follows a bridge
