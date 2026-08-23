@@ -236,6 +236,13 @@ namespace DeadReckoning
                         }
                     }
 
+                    // a2) The recipient can be named only in the objective's INTERNAL dev-name, not the
+                    // NPC list and not the visible title — e.g. dev-name "Bring a copper bar to Yabbis'
+                    // pond in Moonlit Pines", shown to the player as just "the little pond". If that
+                    // names a real NPC, steer to them (beats the vague region below).
+                    if (targetCfg == null)
+                        targetCfg = FindNpcMentioned(node.ObjectiveName);
+
                     // b) Fallback: most objectives don't carry an NPC requirement — the target (vendor /
                     // recipient / location) is only the gold-coloured (#FCEBAE) name in the objective
                     // title, e.g. "Deliver Red Wine to <gold>Orlock</gold>" or "Go to the <gold>Town
@@ -355,6 +362,39 @@ namespace DeadReckoning
                 }
             }
             catch { }
+            return null;
+        }
+
+        // Word-splitters for the objective dev-name scan: whitespace + punctuation, incl. both
+        // apostrophes so a possessive ("Yabbis'") yields the bare name token.
+        private static readonly char[] NameWordSeps =
+            { ' ', '\t', '\n', '\r', '\'', '’', '.', ',', '!', '?', '"', '(', ')', '-', ':', ';' };
+
+        /// <summary>An NPC named as a whole word in <paramref name="text"/> (the objective's internal
+        /// dev-name), or null. This is how a "deliver to X" objective whose visible title hides the
+        /// recipient — e.g. dev-name "Bring a copper bar to Yabbis' pond", shown only as "the little
+        /// pond" — still resolves to Yabbis. Scans last word first, so the "to &lt;recipient&gt;" at the
+        /// end wins over an earlier mention. Whole-word (not substring) to avoid an NPC named "Ed"
+        /// matching "Echoes".</summary>
+        private static NpcConfigAsset FindNpcMentioned(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+            try
+            {
+                NpcLibrary lib = AddressableLibrary<NpcLibrary>.Instance;
+                string[] tokens = text.Split(NameWordSeps, StringSplitOptions.RemoveEmptyEntries);
+                for (int ti = tokens.Length - 1; ti >= 0; ti--)
+                {
+                    string w = NormalizeName(tokens[ti]);
+                    if (w.Length < 2) continue; // skip "a", "to", stray letters — too short to be a name
+                    foreach (NpcConfigAsset cfg in NpcLibrary.NpcConfigs)
+                    {
+                        string n = lib.GetNpcName(cfg, checkIsNameRevealed: false);
+                        if (!string.IsNullOrEmpty(n) && NormalizeName(n) == w) return cfg;
+                    }
+                }
+            }
+            catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Objective NPC-name scan failed: {e.Message}"); }
             return null;
         }
 
