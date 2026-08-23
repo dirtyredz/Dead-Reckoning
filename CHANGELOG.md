@@ -6,6 +6,52 @@ subsystems, the game types leaned on, and the things that were tried and dropped
 One entry per **released** version, not per build — see
 [12-versioning-and-release.md](../../12-versioning-and-release.md).
 
+## 1.2.0
+
+Quest tracking gets precise — it points at the actual node/recipient, not just the region — and the
+idle "not seeking" behaviour is reworked so it reads as clearly different from leading.
+
+### Fixed
+
+- **A completed quest no longer leaves the skull seeking it forever.** `RefreshQuestTarget` resolved
+  a target only from *in-progress* objectives; once the quest finished none were in progress, so it
+  fell through to idle but `trackedQuestNode` stayed set — the skull kept wandering with the quest
+  still on the HUD. Now it polls `QuestPersistence.IsCompleted` each refresh and `ClearTarget()`s
+  (dismisses the skull) when the quest is done.
+
+### Added
+
+- **Gather/mine objectives point at the real node in the scene** (`QuestNodeLocator`, new). The game
+  stores no world position on an objective — only NPC/item/counter requirements plus the region name
+  in the title — so "Mine Copper Ore in the Cave of Echoes" could only ever resolve to the *region*.
+  Now, once you're in that region, DR reads the objective's `ItemAsset` from its
+  `SpeechInjectionCollection` (the asset behind the title's item token — no rich-text colour parsing)
+  and scans loaded `Interactable`s for a matching node: an `IHarvestable` (bush/tree/pickup, matched
+  on its `ItemAsset`) or a mineable `DestructibleView` (matched on its placed grid item). It steers
+  to the nearest match (`trackedNode`, a live `Transform`) and reuses it until it's harvested, to
+  avoid flip-flopping between two veins. **Delivery/turn-in objectives are deliberately left at
+  region level** — nothing links an objective to its hand-in zone, and a destructible's loot is a
+  randomised, event-driven `LootTableAsset` that can't be read without side effects.
+- **Recipients named only in an objective's internal dev-name are now sought** (`FindNpcMentioned`).
+  Some objectives carry no NPC requirement and hide the recipient from the visible title — e.g. the
+  "A Croak and a Crest" delivery shows "the little pond in Moonlit Pines" but its `ObjectiveName` is
+  literally "Bring a copper bar to Yabbis' pond in Moonlit Pines". DR now scans the dev-name for a
+  real, resolvable NPC (whole-word match against `NpcLibrary`, last mention wins so the "to X"
+  recipient beats an earlier mention) between the NPC-requirement and gold-token steps, and steers
+  to them instead of the vague region.
+- **Two idle-follow tuning knobs** — `IdleFollowSpring` and `IdleFollowDamping` (Follow tuning
+  section) — expose the feel of the new idle behaviour below so it can be dialled in-game.
+
+### Changed
+
+- **Idle ("not seeking") no longer trails you at a fixed standoff.** It used to drift-wander around
+  you at the tracking distance, which read almost identically to leading. It now loosely *follows
+  you* via a spring-damper with its own momentum (`idleVel`): it lags when you run, then springs to
+  catch up and gently overshoots — free-floating, never a locked gap. The rest target is the nearest
+  point of a horizontal sphere around you (radius = hover distance), so a skull that's lagged to your
+  south settles to your south instead of flying over your head to a fixed overhead spot. Leading
+  ahead (seeking) vs. floating around you (idle) is now the clear "am I seeking?" tell.
+
 ## 1.1.0
 
 Quest tracking now seeks **location** objectives, not just NPC ones.

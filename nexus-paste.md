@@ -53,8 +53,15 @@ It is the game's real critter, spawned at runtime, so nothing is ever written to
 [*]On-screen text names what it is currently seeking, and the map marks the target
 [*]Recolour the skull's flame to any colour — which also stops it varying between spawns
 [*]One target at a time; switch to a different NPC, quest, house or pin whenever you like
+[*]Quest tracking gets specific — it points at the actual quest NPC, the resource node to gather (the vein, the bush), or the exact recipient, not just the general area
 [*]Save-safe: it spawns a runtime critter and writes nothing to your save
 [/list]
+
+[size=5][color=#F7D994]🧭  A note on quest tracking[/color][/size]
+[color=#D4D4D8]Moonlight Peaks doesn't store a map point for a quest step — the game just writes the objective text and leaves the rest to you. So Dead Reckoning works out where to send you by reading that objective: it'll aim you at the quest's NPC, at the thing you need to gather, or at the place named in the step.
+
+Because it's reading the quest rather than being handed a waypoint, two things can happen. Sometimes a step only tells it the rough area — "somewhere in Moonlit Pines" — and once you're there it can't pin the exact spot, so it stops leading and just floats along beside you instead. That drifting-at-your-side (rather than scouting out in front) is the tell that it's got you as close as the quest lets it. And once in a while a quest is worded in a way that sends the skull to the wrong thing entirely.[/color]
+[quote]🐛  [color=#F7D994][b]Sent somewhere wrong?[/b][/color] If the skull leads you to the wrong place for a quest — or won't lead at all when it should — please post the [b]exact quest name[/b] (and the objective text) in the Bugs tab. With the quest named I can teach it that specific step. Example on file: [i]A Croak and a Crest[/i].[/quote]
 
 [size=5][color=#F7D994]📋  Requirements[/color][/size]
 [b]Required[/b]

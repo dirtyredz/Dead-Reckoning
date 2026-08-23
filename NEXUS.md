@@ -17,7 +17,7 @@ live page to pull BBCode from yet, so `nexus-paste.md` is the source of truth fo
 | **Name** | Dead Reckoning |
 | **Summary** (short, shows in listings) | A little skull floats beside you and drifts toward whatever you're looking for — an NPC, a house, a quest, or a spot you pin on the map. Follow it there instead of squinting at an arrow. |
 | **Category** | Gameplay — where a navigation/follower aid is browsed for, alongside the tracker it replaces |
-| **Version** | 1.0.0 |
+| **Version** | 1.2.0 |
 | **Nexus page** | [mod 144](https://www.nexusmods.com/moonlightpeaks/mods/144) — live since 2026-08-21 |
 | **Requirements** | BepInEx 5 (win_x64), 5.4.23.5 or newer — required |
 | | [Mod Nook](https://www.nexusmods.com/moonlightpeaks/mods/127) — optional, for in-game settings |
