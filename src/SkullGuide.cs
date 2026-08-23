@@ -61,6 +61,7 @@ namespace DeadReckoning
         private Vector3 lastPlayerPos;
         private bool hasLastPlayer;
         private float playerSpeed;
+        private Vector3 idleVel;        // persistent velocity for the idle spring-damper (lag + rebound)
         private const float TrackEyeHeight = 0.5f; // body-center height the tracking sightline runs at
         private float skullVisualLift = -1f;       // how far the visible skull floats above its steer-point
 
@@ -794,7 +795,7 @@ namespace DeadReckoning
 
             active = view;
             skullVisualLift = -1f; // re-measure the mesh's float offset for this instance
-            hasLastPlayer = false; playerSpeed = 0f;
+            hasLastPlayer = false; playerSpeed = 0f; idleVel = Vector3.zero;
 
             if (DeadReckoningPlugin.VerboseLogging.Value) { try { DumpBlob(view); } catch { } }
             try { CacheFlame(view); ApplyFlameColor(); } catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Flame recolour failed: {e.Message}"); }
@@ -1391,7 +1392,7 @@ namespace DeadReckoning
                 float t = Time.time;
                 Vector3 sway = new Vector3(Mathf.PerlinNoise(t * 0.13f, 4.7f) - 0.5f,
                                            0f,
-                                           Mathf.PerlinNoise(9.1f, t * 0.13f) - 0.5f) * standoff;
+                                           Mathf.PerlinNoise(9.1f, t * 0.13f) - 0.5f) * (standoff * 0.5f);
                 float h = height + Mathf.Sin(t * 1.3f) * 0.15f; // gentle vertical bob
                 hover = player + sway + Vector3.up * h;
             }
@@ -1417,10 +1418,26 @@ namespace DeadReckoning
             else
             {
                 float cap = Mathf.Max(MaxSpeed, playerSpeed * 1.8f + 3f);
-                Vector3 vel = (hover - skull) * DeadReckoningPlugin.FollowStrength.Value;
+                Vector3 vel;
+                if (live.HasValue)
+                {
+                    // Seeking: crisp proportional chase toward the lead point (settles to the standoff).
+                    vel = (hover - skull) * DeadReckoningPlugin.FollowStrength.Value;
+                    idleVel = vel; // seed the idle spring so the hand-off when tracking drops is smooth
+                }
+                else
+                {
+                    // Idle: a spring-damper with its OWN momentum, so it genuinely lags when you run
+                    // then springs to catch up and gently overshoots — never a locked "stay X away" gap.
+                    float dt = Time.deltaTime;
+                    idleVel += (hover - skull) * DeadReckoningPlugin.IdleSpring.Value * dt;      // pull toward you
+                    idleVel *= Mathf.Max(0f, 1f - DeadReckoningPlugin.IdleDamping.Value * dt);   // damping
+                    vel = idleVel;
+                }
                 vel = Vector3.ClampMagnitude(vel, cap);
                 if (DeadReckoningPlugin.Collide.Value)
                     vel = AvoidWalls(skull, vel);
+                if (!live.HasValue) idleVel = vel; // persist the actually-applied velocity (post clamp/avoid)
                 if (vel.sqrMagnitude > 0.0001f)
                     active.Mover.Move(vel);
             }

@@ -34,6 +34,8 @@ namespace DeadReckoning
         internal static ConfigEntry<bool> Collide;
         internal static ConfigEntry<bool> FollowPath;
         internal static ConfigEntry<float> MaxLeash;
+        internal static ConfigEntry<float> IdleSpring;
+        internal static ConfigEntry<float> IdleDamping;
 
         internal static ConfigEntry<bool> RecolorFlame;
         internal static ConfigEntry<string> FlameColor;
@@ -104,6 +106,20 @@ namespace DeadReckoning
                     "If the skull gets this far from you, it snaps back to your side.",
                     new AcceptableValueRange<float>(3f, 40f),
                     TuningSection, "ModMenu.Label=Reset distance"));
+
+            IdleSpring = Config.Bind(
+                "Tuning", "IdleFollowSpring", 6f,
+                new ConfigDescription(
+                    "When NOT seeking, how strongly the skull is pulled back toward you. Lower = lazier: it lags further behind before catching up.",
+                    new AcceptableValueRange<float>(1f, 30f),
+                    TuningSection, "ModMenu.Label=Idle follow spring"));
+
+            IdleDamping = Config.Bind(
+                "Tuning", "IdleFollowDamping", 2.5f,
+                new ConfigDescription(
+                    "When NOT seeking, how much its drift is damped. Lower = bouncier rebound/overshoot as it catches up; higher = settles straight in.",
+                    new AcceptableValueRange<float>(0.5f, 10f),
+                    TuningSection, "ModMenu.Label=Idle follow damping"));
 
             ShowHud = Config.Bind(
                 "Tuning", "ShowHud", true,

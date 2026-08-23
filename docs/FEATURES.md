@@ -18,7 +18,7 @@ Capability inventory + status. ✅ shipped · 🚧 partial · 💡 planned (see 
 | Feature | Status | Notes |
 |---|---|---|
 | Save-safe soul-blob spawn | ✅ | Runtime critter, writes nothing to the save; auto-respawns across room changes while tracking. |
-| Lead-vs-follow behaviour | ✅ | Leads *ahead* toward a live fix; when there's no route (arrived / not seeking) it loosely *follows you* — homes toward the player with an organic sway so it lags, drifts, and closes in naturally (free-floating, not pinned to a side or a fixed distance). Lead-toward-target vs. follow-you is the "am I seeking?" tell. |
+| Lead-vs-follow behaviour | ✅ | Leads *ahead* toward a live fix (proportional chase, settles to the standoff). When not seeking it loosely *follows you* via a spring-damper with its own momentum — genuinely lags when you run, then springs to catch up and gently overshoots, free-floating (organic sway), never a locked gap. Tunable via `IdleFollowSpring` / `IdleFollowDamping`. Lead-toward-target vs. follow-you is the "am I seeking?" tell. |
 | A* route following | ✅ | Leads along the walkable path around furniture/walls (`FollowPath`). |
 | Cross-room routing | ✅ | Points at the door toward the target's room (BFS over the room graph). |
 | Wall collision | ✅ | Spherecast + slide against the obstacle layer (`Collide`). House walls (Ground layer) are a known accepted clip. |
