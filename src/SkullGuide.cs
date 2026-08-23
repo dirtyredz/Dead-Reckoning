@@ -38,6 +38,7 @@ namespace DeadReckoning
         private RoomAsset pinRoom;               // free-pin: the room + exact in-room spot
         private Vector3 pinRoomPos;
         private bool hasPin;
+        private Transform trackedNode;           // quest gather/mine node: the live in-scene harvest/ore node
         private string trackedName;
         private Action<PickNpcListWidget> npcClickedHandler;
 
@@ -92,7 +93,7 @@ namespace DeadReckoning
         {
             tracked = cfg;
             trackedRooms = null; hasPin = false; // single target
-            trackedQuestNode = null; trackedQuestData = null;
+            trackedQuestNode = null; trackedQuestData = null; trackedNode = null;
             trackedName = cfg != null ? AddressableLibrary<NpcLibrary>.Instance.GetNpcName(cfg, checkIsNameRevealed: false) : null;
             cachedRoute = null; nextRouteAt = 0f;
             DeadReckoningPlugin.Log.LogInfo($"Now tracking: {trackedName ?? "<none>"}");
@@ -103,7 +104,7 @@ namespace DeadReckoning
         {
             trackedRooms = rooms != null ? rooms.Where(r => r != null).ToList() : null;
             tracked = null; hasPin = false; // single target
-            trackedQuestNode = null; trackedQuestData = null;
+            trackedQuestNode = null; trackedQuestData = null; trackedNode = null;
             trackedName = name;
             cachedRoute = null; nextRouteAt = 0f;
             DeadReckoningPlugin.Log.LogInfo($"Now tracking place: {name ?? "<none>"}");
@@ -115,7 +116,7 @@ namespace DeadReckoning
             trackedRooms = new List<RoomAsset> { room }; // reuse room routing when out of the room
             pinRoom = room; pinRoomPos = roomPos; hasPin = true;
             tracked = null;
-            trackedQuestNode = null; trackedQuestData = null;
+            trackedQuestNode = null; trackedQuestData = null; trackedNode = null;
             trackedName = name;
             cachedRoute = null; nextRouteAt = 0f;
             DeadReckoningPlugin.Log.LogInfo($"Now tracking pin: {name}");
@@ -146,7 +147,7 @@ namespace DeadReckoning
             catch { return null; }
         }
 
-        private bool HasTarget() => tracked != null || (trackedRooms != null && trackedRooms.Count > 0);
+        private bool HasTarget() => tracked != null || (trackedRooms != null && trackedRooms.Count > 0) || trackedNode != null;
 
         internal void ToggleTrack(NpcConfigAsset cfg)
         {
@@ -169,7 +170,7 @@ namespace DeadReckoning
         {
             trackedQuestNode = node;
             trackedQuestData = data;
-            tracked = null; trackedRooms = null; hasPin = false;
+            tracked = null; trackedRooms = null; hasPin = false; trackedNode = null;
             trackedName = node != null ? node.GetQuestTitle() : null;
             cachedRoute = null; nextRouteAt = 0f; nextQuestRefresh = 0f;
             DeadReckoningPlugin.Log.LogInfo($"Now tracking quest: {trackedName ?? "<none>"}");
@@ -215,11 +216,13 @@ namespace DeadReckoning
             {
                 NpcConfigAsset targetCfg = null;
                 List<RoomAsset> targetRooms = null;
+                QuestObjectiveNode activeNode = null;
                 foreach (KeyValuePair<QuestObjectiveNode, QuestObjectivePersistence> kv in QuestObjectives(trackedQuestNode))
                 {
                     QuestObjectiveNode node = kv.Key;
                     QuestObjectivePersistence p = kv.Value;
                     if (p == null || p.Status != QuestObjectiveStatus.InProgress) continue;
+                    activeNode = node; // the objective we're steering for (used for gather/mine node lookup)
 
                     // a) Last still-required NPC of this objective (RequiredNpcList minus DoneNpcList).
                     for (int i = p.RequiredNpcList.Count - 1; i >= 0; i--)
@@ -252,28 +255,63 @@ namespace DeadReckoning
                     if (targetCfg != null || targetRooms != null) break;
                 }
 
+                // c) Gather/mine objectives ("Mine Copper Ore in the Cave of Echoes") name an item, not
+                // a character. Once you're inside the target region, point at the actual node in the
+                // scene — the vein/bush — instead of idling at the region's threshold. The node only
+                // exists in the loaded room, so we only scan once we're in the region the gold token
+                // resolved to (or unconstrained when the objective named no region). Reuse the current
+                // node while it's still valid to avoid flip-flopping between two equidistant veins.
+                Transform targetNode = null;
+                if (targetCfg == null && activeNode != null && InTargetRegion(targetRooms))
+                {
+                    ItemAsset item = QuestNodeLocator.ObjectiveItem(activeNode);
+                    if (item != null)
+                        targetNode = (trackedNode != null && QuestNodeLocator.StillYields(trackedNode, item))
+                            ? trackedNode
+                            : QuestNodeLocator.NearestNode(item, PlayerPos());
+                }
+
                 if (targetCfg != null)
                 {
                     if (tracked != targetCfg)
                     {
-                        tracked = targetCfg; trackedRooms = null; hasPin = false;
+                        tracked = targetCfg; trackedRooms = null; hasPin = false; trackedNode = null;
+                        cachedRoute = null; nextRouteAt = 0f;
+                    }
+                }
+                else if (targetNode != null)
+                {
+                    if (trackedNode != targetNode || tracked != null || trackedRooms != null)
+                    {
+                        trackedNode = targetNode; tracked = null; trackedRooms = null; hasPin = false;
                         cachedRoute = null; nextRouteAt = 0f;
                     }
                 }
                 else if (targetRooms != null)
                 {
-                    if (tracked != null || !SameRoomSet(trackedRooms, targetRooms))
+                    if (tracked != null || trackedNode != null || !SameRoomSet(trackedRooms, targetRooms))
                     {
-                        trackedRooms = targetRooms; tracked = null; hasPin = false;
+                        trackedRooms = targetRooms; tracked = null; hasPin = false; trackedNode = null;
                         cachedRoute = null; nextRouteAt = 0f;
                     }
                 }
-                else if (tracked != null || trackedRooms != null)
+                else if (tracked != null || trackedRooms != null || trackedNode != null)
                 {
-                    tracked = null; trackedRooms = null; hasPin = false; cachedRoute = null; // idle
+                    tracked = null; trackedRooms = null; hasPin = false; trackedNode = null; cachedRoute = null; // idle
                 }
             }
             catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Quest target refresh failed: {e.Message}"); }
+        }
+
+        /// <summary>True when the player is in the region the objective's gold token resolved to, so a
+        /// gather/mine node scan is worth running (the node only exists in the loaded room). An
+        /// objective that named no region (null) is scanned wherever the player is.</summary>
+        private bool InTargetRegion(List<RoomAsset> region)
+        {
+            if (region == null) return true;
+            if (!AddressableLibrary<NavigationLibrary>.Exists) return false;
+            RoomAsset cur = GamePersistence.CurrentRoomAsset;
+            return cur != null && region.Contains(cur);
         }
 
         /// <summary>The inner text of the LAST gold-coloured (#FCEBAE) token in an objective title — the
@@ -1002,7 +1040,7 @@ namespace DeadReckoning
 
             tracked = picked;
             trackedRooms = null; hasPin = false; // clear any place/free-pin target so the NPC actually wins
-            trackedQuestNode = null; trackedQuestData = null; // picking someone overrides quest tracking
+            trackedQuestNode = null; trackedQuestData = null; trackedNode = null; // picking someone overrides quest tracking
             trackedName = tracked != null
                 ? AddressableLibrary<NpcLibrary>.Instance.GetNpcName(tracked, checkIsNameRevealed: false)
                 : null;
@@ -1035,7 +1073,7 @@ namespace DeadReckoning
             tracked = null;
             trackedRooms = null;
             hasPin = false;
-            trackedQuestNode = null; trackedQuestData = null;
+            trackedQuestNode = null; trackedQuestData = null; trackedNode = null;
             trackedName = null;
             cachedRoute = null; nextRouteAt = 0f;
             // No target => no skull. It only exists while you're tracking something now.
@@ -1407,6 +1445,10 @@ namespace DeadReckoning
         /// </summary>
         private Vector3? TrackedWorldPos()
         {
+            // Quest gather/mine node: steer straight to the live in-scene node (the copper vein, the
+            // berry bush). It's in the loaded room, so the A* lead in Steer curves the skull to it.
+            if (trackedNode != null) return trackedNode.position;
+
             // Place/house target: lead toward the nearest tracked room's door; idle once we're inside.
             if (trackedRooms != null && trackedRooms.Count > 0)
             {

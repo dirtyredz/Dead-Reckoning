@@ -10,6 +10,7 @@ Capability inventory + status. ✅ shipped · 🚧 partial · 💡 planned (see 
 | Track a house/place | ✅ | Double-click a place badge on the map. Routes across rooms to it, idles on arrival. |
 | Free map pin | ✅ | Double-click any empty map spot; resolves the exact in-room world position. |
 | Track a quest | ✅ | "Seek Quest" button in the Quest Log; follows the current objective's target NPC or gold-token location. Added in v1.1.0. |
+| Gather/mine node precision | ✅ | For a "gather/mine `<item>`" objective, once you're in the target region the skull points at the actual harvestable/mineable node in the scene (the copper vein, the bush), not just the region. `QuestNodeLocator`: reads the objective's item from its `InjectionCollection`, scans loaded `Interactable`s for a matching `IHarvestable`/`DestructibleView`. Delivery/turn-in objectives stay region-level (no data link). |
 | Single active target | ✅ | One target at a time; a new target replaces the old. |
 
 ## The skull
@@ -49,6 +50,6 @@ Capability inventory + status. ✅ shipped · 🚧 partial · 💡 planned (see 
 
 | Feature | Status | Notes |
 |---|---|---|
-| In-house precision | 💡 | Once inside the target room, point at the exact `EntityLocation` instead of idling. |
+| In-house precision | 🚧 | Gather/mine objectives now point at the exact scene node (`QuestNodeLocator`). Still idles for a tracked house/NPC once inside their room, and for quest delivery/turn-in objectives (no world-position data). |
 | Non-NPC pet tracking | 💡 | Pets (cat) don't resolve when their live entity guid mismatches. |
 | Skull/aura recolour pass | 💡 | Broader Tastic-Palette-style recolour of the skull + VFX (flame recolour already shipped). |

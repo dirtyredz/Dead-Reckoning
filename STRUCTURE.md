@@ -22,6 +22,7 @@ Ships two files: `DeadReckoning.dll` + `track-icon.png`.
 |---|---|---|
 | **Plugin entry** | `src/Plugin.cs` | `DeadReckoningPlugin`: BepInEx entry, config binding, `Harmony.PatchAll`, lazy Far Sight coexistence patch, `Log`. Creates the `SkullGuide` MonoBehaviour. |
 | **Skull driver** | `src/SkullGuide.cs` | **The runtime core (God-file, ~1600 lines).** Target model + single-active-target invariant, critter spawn/despawn lifecycle, the per-frame `Update` loop, steering (leash, wall-avoid, ground-clamp, path-lead, idle wander), NPC picker UI, quest-objective resolution + quest HUD text, map double-click tracking + free pin, flame recolour, marker-highlight orchestration, diagnostics probes. See **Structural debt**. |
+| **Quest node locator** | `src/QuestNodeLocator.cs` | Static. Bridges a "gather/mine `<item>`" objective to the world: reads the objective's `ItemAsset` from its `InjectionCollection`, then scans loaded `Interactable`s for a matching `IHarvestable`/`DestructibleView` node (the copper vein, the bush). Feeds `SkullGuide`'s quest resolution. |
 | **Cross-room routing** | `src/RoomRouter.cs` | Static. BFS over `NavigationLibrary`'s room graph → world position of the door to head toward a target room. |
 | **In-room pathing** | `src/PathGuide.cs` | Wraps the game's A* Pathfinding graph: a lead point a set distance along the walkable path to the target. |
 | **Seeking HUD** | `src/TrackHud.cs` | Screen-space overlay: "Seeking: X" / the quest objectives list, with a ✕ stop control. Owns its canvas + Gelica font lookup. |
@@ -57,8 +58,10 @@ and the `ConfigEntry` statics — that's an accepted hub, not debt.
   spawns/re-spawns the critter and `Steer()` drives it each frame.
 - **Steer** → `TrackedWorldPos()` resolves the live target/door → `PathGuide`/`RoomRouter` shape the
   lead point → wall-avoid + ground-clamp → `Mover.Move`. No target ⇒ idle wander.
-- **Quest** → `RefreshQuestTarget()` reads the current in-progress objective, resolves its target
-  NPC or gold-token location name, and drives the NPC/room steering by proxy.
+- **Quest** → `RefreshQuestTarget()` reads the current in-progress objective and resolves, in priority
+  order: target NPC → gather/mine scene node (via `QuestNodeLocator`, only once you're in the region) →
+  gold-token location → idle. It also stops + dismisses the skull once `QuestPersistence.IsCompleted`.
+  A gather/mine node is a live `Transform` (`trackedNode`) the skull steers straight to.
 
 ## Conventions
 
@@ -94,9 +97,10 @@ pass). Full triage with priorities in [docs/BACKLOG.md](docs/BACKLOG.md).
   The review's recommended extraction order (the target model first, because it shrinks every other
   seam's diff):
   1. **Target model** → a `TrackingSelection` (what the user chose) + `ResolvedDestination` (where to
-     steer) pair. Today it's 9 parallel fields with a "clear the other kinds" invariant hand-repeated
-     in **7** places (`RefreshQuestTarget` clears inline twice) — the exact shape that caused the past
-     "stale free-pin shadowed an NPC" bug. **P1.**
+     steer) pair. Today it's **10** parallel fields (a `trackedNode` gather/mine target was added) with
+     a "clear the other kinds" invariant hand-repeated across **~9** sites (`RefreshQuestTarget`'s apply
+     block clears inline four times) — the exact shape that caused the past "stale free-pin shadowed an
+     NPC" bug, and now grown further. This is the top extraction target. **P1.**
   2. **Quest-objective resolution** → `QuestObjectiveResolver` + a separate HUD formatter (it reads
      persistence/scene/time and parses rich text — not "pure/static" as first assumed). **P1.**
   3. **NPC picker UI** *and* **map-tracking input** → two controllers that issue tracking commands.
