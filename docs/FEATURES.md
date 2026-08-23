@@ -18,7 +18,7 @@ Capability inventory + status. ✅ shipped · 🚧 partial · 💡 planned (see 
 | Feature | Status | Notes |
 |---|---|---|
 | Save-safe soul-blob spawn | ✅ | Runtime critter, writes nothing to the save; auto-respawns across room changes while tracking. |
-| Lead-vs-park behaviour | ✅ | Leads toward a live fix; when there's no route (arrived / not seeking) it **parks in place** so you visibly leave it behind — the leash drags it back only when you get far enough. This lead-vs-park contrast is the "am I tracking?" tell. |
+| Lead-vs-follow behaviour | ✅ | Leads *ahead* toward a live fix; when there's no route (arrived / not seeking) it follows smoothly *at your side* instead. Ahead-vs-beside is the "am I seeking?" tell — no wander, no snap-back. |
 | A* route following | ✅ | Leads along the walkable path around furniture/walls (`FollowPath`). |
 | Cross-room routing | ✅ | Points at the door toward the target's room (BFS over the room graph). |
 | Wall collision | ✅ | Spherecast + slide against the obstacle layer (`Collide`). House walls (Ground layer) are a known accepted clip. |

@@ -69,8 +69,6 @@ namespace DeadReckoning
         private static int envMask = -1;           // obstacle layers (walls), NOT ground/water/bridge
         private static int groundMask = -1;        // ground/terrain/bridge deck the skull hovers above
         private float nextProbe;
-        private bool idleAnchored;      // idle = park in place (not tracking); the leash drags it along
-        private Vector3 idleAnchor;     // the world spot it holds while idle
         private float nextDebugLog;
 
         private Vector3? cachedRoute; // door-to-head-toward for an off-room target
@@ -797,7 +795,6 @@ namespace DeadReckoning
             active = view;
             skullVisualLift = -1f; // re-measure the mesh's float offset for this instance
             hasLastPlayer = false; playerSpeed = 0f;
-            idleAnchored = false; // park fresh wherever it settles when it next goes idle
 
             if (DeadReckoningPlugin.VerboseLogging.Value) { try { DumpBlob(view); } catch { } }
             try { CacheFlame(view); ApplyFlameColor(); } catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Flame recolour failed: {e.Message}"); }
@@ -1341,7 +1338,6 @@ namespace DeadReckoning
                                 + Vector3.up * DeadReckoningPlugin.HoverHeight.Value;
                 active.Mover.Teleport(reset, forceToWalkablePosition: false);
                 cachedRoute = null; nextRouteAt = 0f;
-                idleAnchor = reset; idleAnchored = true; // if idle, hold here (beside you) after the drag catches up
                 return;
             }
 
@@ -1384,19 +1380,16 @@ namespace DeadReckoning
                 // The skull mesh floats above the point we steer; drop the steer-point by that much so
                 // the mesh itself lands on the lead point instead of above it.
                 hover = leadPoint - Vector3.up * SkullVisualLift();
-
-                idleAnchored = false; // re-park fresh next time tracking drops
             }
             else
             {
                 pathGuide.Clear();
-                // Idle = "not seeking": park in place instead of trailing you at a standoff, so it's
-                // obvious the skull isn't leading anywhere — you walk off and leave it behind, and the
-                // leash above drags it back to you only once you're far enough. It holds the spot it
-                // was at when tracking dropped, with a gentle vertical bob so it still reads as alive.
-                if (!idleAnchored) { idleAnchor = skull; idleAnchored = true; }
-                float bob = Mathf.Sin(Time.time * 1.3f) * 0.15f;
-                hover = new Vector3(idleAnchor.x, idleAnchor.y + bob, idleAnchor.z);
+                // Idle = "not seeking": follow smoothly at your side instead of leading ahead. Sitting
+                // beside you (not out in front pointing the way) is the "not seeking" tell, and the
+                // steady Move below keeps it gliding along — no wander, no snap-back.
+                Vector3 side = Vector3.Cross(Vector3.up, PlayerForwardIsh()).normalized; // player's right
+                float h = height + Mathf.Sin(Time.time * 1.3f) * 0.15f;                  // gentle vertical bob
+                hover = player + side * standoff + Vector3.up * h;
             }
 
             // Ride above the surface beneath the skull (terrain, bridge deck) so it follows a bridge
