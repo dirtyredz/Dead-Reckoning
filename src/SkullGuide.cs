@@ -201,6 +201,16 @@ namespace DeadReckoning
             if (Time.time < nextQuestRefresh) return;
             nextQuestRefresh = Time.time + 0.5f;
 
+            // Quest finished while we were seeking it → stop and dismiss the skull. Otherwise no
+            // objective stays InProgress, RefreshQuestTarget resolves no target, and the skull is
+            // left idle-wandering with "Seeking: <quest>" still on the HUD forever.
+            if (trackedQuestData != null && trackedQuestData.IsCompleted)
+            {
+                DeadReckoningPlugin.Log.LogInfo($"Tracked quest completed — stopping: {trackedName ?? "<none>"}");
+                ClearTarget();
+                return;
+            }
+
             try
             {
                 NpcConfigAsset targetCfg = null;
