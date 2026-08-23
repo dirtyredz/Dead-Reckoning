@@ -236,27 +236,29 @@ namespace DeadReckoning
                         }
                     }
 
-                    // a2) The recipient can be named only in the objective's INTERNAL dev-name, not the
+                    // b) Most objectives carry no NPC requirement — the target (vendor / recipient /
+                    // location) is the gold-coloured (#FCEBAE) name in the visible title, e.g. "Deliver
+                    // Red Wine to <gold>Orlock</gold>" or "Go to the <gold>Town Hall</gold>". The gold
+                    // token is the game's own curated target, so an NPC it names is authoritative — try
+                    // it first.
+                    string goldName = null;
+                    if (targetCfg == null)
+                    {
+                        goldName = LastGoldToken(node.GetObjectiveTitle());
+                        if (!string.IsNullOrEmpty(goldName)) targetCfg = FindNpcByName(goldName);
+                    }
+
+                    // c) The recipient can be named only in the objective's INTERNAL dev-name, not the
                     // NPC list and not the visible title — e.g. dev-name "Bring a copper bar to Yabbis'
-                    // pond in Moonlit Pines", shown to the player as just "the little pond". If that
-                    // names a real NPC, steer to them (beats the vague region below).
+                    // pond in Moonlit Pines", shown as just "the little pond". Fall to this only when the
+                    // gold token wasn't itself an NPC, so a real gold-token character always wins over a
+                    // free-form dev-name mention — but a named recipient still beats the vague region (d).
                     if (targetCfg == null)
                         targetCfg = FindNpcMentioned(node.ObjectiveName);
 
-                    // b) Fallback: most objectives don't carry an NPC requirement — the target (vendor /
-                    // recipient / location) is only the gold-coloured (#FCEBAE) name in the objective
-                    // title, e.g. "Deliver Red Wine to <gold>Orlock</gold>" or "Go to the <gold>Town
-                    // Hall</gold>". Resolve that name to an NPC first; if it's not a character, treat it
-                    // as a place and resolve it to that location's rooms (same routing as a map house).
-                    if (targetCfg == null)
-                    {
-                        string name = LastGoldToken(node.GetObjectiveTitle());
-                        if (!string.IsNullOrEmpty(name))
-                        {
-                            targetCfg = FindNpcByName(name);
-                            if (targetCfg == null) targetRooms = ResolveQuestLocation(name);
-                        }
-                    }
+                    // d) Still no character → treat the gold token as a place and route to its rooms.
+                    if (targetCfg == null && !string.IsNullOrEmpty(goldName))
+                        targetRooms = ResolveQuestLocation(goldName);
 
                     if (targetCfg != null || targetRooms != null) break;
                 }
@@ -370,32 +372,58 @@ namespace DeadReckoning
         private static readonly char[] NameWordSeps =
             { ' ', '\t', '\n', '\r', '\'', '’', '.', ',', '!', '?', '"', '(', ')', '-', ':', ';' };
 
-        /// <summary>An NPC named as a whole word in <paramref name="text"/> (the objective's internal
-        /// dev-name), or null. This is how a "deliver to X" objective whose visible title hides the
-        /// recipient — e.g. dev-name "Bring a copper bar to Yabbis' pond", shown only as "the little
-        /// pond" — still resolves to Yabbis. Scans last word first, so the "to &lt;recipient&gt;" at the
-        /// end wins over an earlier mention. Whole-word (not substring) to avoid an NPC named "Ed"
-        /// matching "Echoes".</summary>
+        /// <summary>An NPC whose (possibly multi-word) display name appears as a whole run of words in
+        /// <paramref name="text"/> (the objective's internal dev-name), or null. This is how a "deliver
+        /// to X" objective whose visible title hides the recipient — e.g. dev-name "Bring a copper bar
+        /// to Yabbis' pond", shown only as "the little pond" — still resolves to Yabbis. Matches the NPC
+        /// whose name occurs LATEST, so the "to &lt;recipient&gt;" at the end wins over an earlier
+        /// mention. Whole-word runs (not substrings) so "Ed" can't match "Echoes" and multi-word names
+        /// like "Old Man Jenkins" are reachable.</summary>
         private static NpcConfigAsset FindNpcMentioned(string text)
         {
             if (string.IsNullOrEmpty(text)) return null;
             try
             {
-                NpcLibrary lib = AddressableLibrary<NpcLibrary>.Instance;
-                string[] tokens = text.Split(NameWordSeps, StringSplitOptions.RemoveEmptyEntries);
-                for (int ti = tokens.Length - 1; ti >= 0; ti--)
+                // Ordered, normalized word list of the dev-name.
+                var words = new List<string>();
+                foreach (string tok in text.Split(NameWordSeps, StringSplitOptions.RemoveEmptyEntries))
                 {
-                    string w = NormalizeName(tokens[ti]);
-                    if (w.Length < 2) continue; // skip "a", "to", stray letters — too short to be a name
-                    foreach (NpcConfigAsset cfg in NpcLibrary.NpcConfigs)
-                    {
-                        string n = lib.GetNpcName(cfg, checkIsNameRevealed: false);
-                        if (!string.IsNullOrEmpty(n) && NormalizeName(n) == w) return cfg;
-                    }
+                    string w = NormalizeName(tok);
+                    if (w.Length > 0) words.Add(w);
                 }
+                if (words.Count == 0) return null;
+
+                NpcLibrary lib = AddressableLibrary<NpcLibrary>.Instance;
+                NpcConfigAsset best = null;
+                int bestPos = -1;
+                foreach (NpcConfigAsset cfg in NpcLibrary.NpcConfigs)
+                {
+                    string n = lib.GetNpcName(cfg, checkIsNameRevealed: false);
+                    if (string.IsNullOrEmpty(n)) continue;
+                    string[] nameWords = NormalizeName(n).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    // Skip a single ultra-short name (e.g. a 1-letter alias) — too generic to trust.
+                    if (nameWords.Length == 0 || (nameWords.Length == 1 && nameWords[0].Length < 2)) continue;
+                    int pos = LastRunIndex(words, nameWords);
+                    if (pos > bestPos) { bestPos = pos; best = cfg; }
+                }
+                return best;
             }
             catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Objective NPC-name scan failed: {e.Message}"); }
             return null;
+        }
+
+        /// <summary>The start index of the LAST contiguous occurrence of <paramref name="needle"/> in
+        /// <paramref name="hay"/> (whole-word run match), or -1.</summary>
+        private static int LastRunIndex(List<string> hay, string[] needle)
+        {
+            for (int start = hay.Count - needle.Length; start >= 0; start--)
+            {
+                bool ok = true;
+                for (int j = 0; j < needle.Length; j++)
+                    if (hay[start + j] != needle[j]) { ok = false; break; }
+                if (ok) return start;
+            }
+            return -1;
         }
 
         // Cache the last quest-location lookup so the 0.5s refresh doesn't re-scan every tick — the

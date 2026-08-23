@@ -21,7 +21,7 @@ Ships two files: `DeadReckoning.dll` + `track-icon.png`.
 | Component | File | Responsibility |
 |---|---|---|
 | **Plugin entry** | `src/Plugin.cs` | `DeadReckoningPlugin`: BepInEx entry, config binding, `Harmony.PatchAll`, lazy Far Sight coexistence patch, `Log`. Creates the `SkullGuide` MonoBehaviour. |
-| **Skull driver** | `src/SkullGuide.cs` | **The runtime core (God-file, ~1600 lines).** Target model + single-active-target invariant, critter spawn/despawn lifecycle, the per-frame `Update` loop, steering (leash, wall-avoid, ground-clamp, path-lead, idle wander), NPC picker UI, quest-objective resolution + quest HUD text, map double-click tracking + free pin, flame recolour, marker-highlight orchestration, diagnostics probes. See **Structural debt**. |
+| **Skull driver** | `src/SkullGuide.cs` | **The runtime core (God-file, ~1680 lines).** Target model + single-active-target invariant, critter spawn/despawn lifecycle, the per-frame `Update` loop, steering (leash, wall-avoid, ground-clamp, path-lead, idle spring-follow), NPC picker UI, quest-objective resolution (NPC/dev-name/gather-node/location) + quest HUD text, map double-click tracking + free pin, flame recolour, marker-highlight orchestration, diagnostics probes. See **Structural debt**. |
 | **Quest node locator** | `src/QuestNodeLocator.cs` | Static. Bridges a "gather/mine `<item>`" objective to the world: reads the objective's `ItemAsset` from its `InjectionCollection`, then scans loaded `Interactable`s for a matching `IHarvestable`/`DestructibleView` node (the copper vein, the bush). Feeds `SkullGuide`'s quest resolution. |
 | **Cross-room routing** | `src/RoomRouter.cs` | Static. BFS over `NavigationLibrary`'s room graph → world position of the door to head toward a target room. |
 | **In-room pathing** | `src/PathGuide.cs` | Wraps the game's A* Pathfinding graph: a lead point a set distance along the walkable path to the target. |
@@ -93,7 +93,7 @@ pass). Full triage with priorities in [docs/BACKLOG.md](docs/BACKLOG.md).
   cards, not map markers.
 
 **Open — the big one (backlogged, needs its own focused passes; do NOT drive-by):**
-- **`SkullGuide.cs` is a ~1580-line God-file** (~2× the 800-line cap) spanning ~9 responsibilities.
+- **`SkullGuide.cs` is a ~1680-line God-file** (~2× the 800-line cap) spanning ~9 responsibilities.
   The review's recommended extraction order (the target model first, because it shrinks every other
   seam's diff):
   1. **Target model** → a `TrackingSelection` (what the user chose) + `ResolvedDestination` (where to

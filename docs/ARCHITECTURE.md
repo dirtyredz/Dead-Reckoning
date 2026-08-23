@@ -21,25 +21,28 @@ from there. There is no other update loop; the Harmony patches only inject UI th
 
 ## The target model (single active target)
 
-One target at a time, of one of four kinds, held as separate fields in `SkullGuide`:
+One target at a time, of one of five kinds, held as separate fields in `SkullGuide`:
 
 | Kind | Fields | Set by |
 |---|---|---|
 | NPC | `tracked : NpcConfigAsset` | picker, Relationships button, map NPC badge |
 | Place/house | `trackedRooms : List<RoomAsset>` | map house badge |
 | Free pin | `pinRoom` + `pinRoomPos` + `hasPin` (also fills `trackedRooms`) | map double-click on empty spot |
-| Quest | `trackedQuestNode` + `trackedQuestData` | Quest Log "Seek Quest" button |
+| Gather/mine node | `trackedNode : Transform` | quest resolution, via `QuestNodeLocator` (the live in-scene vein/bush) |
+| Quest | `trackedQuestNode` + `trackedQuestData` | Quest Log "Seek Quest" button (drives the kinds above) |
 
-**Invariant:** every setter clears the other three kinds. This is enforced by hand in each of
-`SetTracked`, `SetTrackedRooms`, `SetPin`, `OnNpcPicked`, `TrackQuest`, and `ClearTarget` — a known
-footgun (see [GOTCHAS.md](GOTCHAS.md); a past bug where a stale free-pin shadowed an NPC came from
-exactly this). Candidate for extraction into a `TrackTarget` type ([BACKLOG.md](BACKLOG.md)).
+**Invariant:** setting one kind clears the others. This is enforced by hand — not only in the setters
+(`SetTracked`, `SetTrackedRooms`, `SetPin`, the NPC-pick handler, `TrackQuest`, `ClearTarget`) but
+also in the **four inline apply-branches of `RefreshQuestTarget`**, which write the fields directly.
+A known footgun (see [GOTCHAS.md](GOTCHAS.md); a past bug where a stale free-pin shadowed an NPC came
+from exactly this). Top candidate for extraction into a `TrackTarget` type ([BACKLOG.md](BACKLOG.md)).
 
 ## Steering pipeline (`Steer`, each frame)
 
 1. **Player-speed tracking** — smoothed, so the velocity cap can outrun a sprinting player.
 2. **Leash** — if the skull strays past `MaxLeash`, `Mover.Teleport` snaps it back beside you.
 3. **Resolve the target world point** (`TrackedWorldPos`):
+   - Gather/mine node → the live node `Transform`'s position (it's in the loaded room; A* leads to it).
    - NPC in the current room → its live transform.
    - NPC / place in another room → the **door** heading toward it (`RoomRouter`, BFS, throttled &
      cached). We steer at the door, *not* the NPC's `NavPosition` (that's per-room offset space).
@@ -52,7 +55,10 @@ exactly this). Candidate for extraction into a `TrackTarget` type ([BACKLOG.md](
 7. **Wall-avoid** — spherecast the intended step against the obstacle layer; clamp + slide.
 8. **Move** — `Mover.Move(velocity)`, capped. First frame after spawn teleports to the spot.
 
-No target ⇒ Perlin-noise idle wander around the player.
+No target ⇒ **idle follow**: a spring-damper (`idleVel`, tuned by `IdleFollowSpring`/`IdleFollowDamping`)
+homes toward the nearest point of a horizontal sphere around the player (radius = hover distance), so it
+lags when you run and springs back (Perlin noise only breathes the radius). Leading-ahead (seeking) vs.
+floating-around-you (idle) is the "am I seeking?" tell.
 
 ## Cross-room routing (`RoomRouter`)
 
@@ -70,15 +76,24 @@ forward — smooth as you move. Routes like a land NPC (water-excluded tag mask)
 ## Quest tracking
 
 The Quest Log "Seek Quest" button ([QuestTrackButton.cs](../src/QuestTrackButton.cs)) calls
-`SkullGuide.TrackQuest`. Each refresh (`RefreshQuestTarget`, throttled) reads the current in-progress
-objective and finds its target:
-1. The last still-required NPC (`RequiredNpcList` minus `DoneNpcList`), if any.
-2. Else the **last gold-coloured (`#FCEBAE`) token** in the objective title — the game's colour for a
-   character/location reference ("Deliver to *Orlock*", "Go to the *Town Hall*"). Resolved to an NPC,
-   or failing that to a place's rooms (same routing as a map house).
+`SkullGuide.TrackQuest`. First, if `QuestPersistence.IsCompleted` is set the quest is done, so
+`RefreshQuestTarget` `ClearTarget()`s (dismisses the skull) rather than idling forever. Otherwise each
+refresh (throttled) reads the current in-progress objective and resolves its target, in priority order:
 
-The resolved target is applied by setting `tracked`/`trackedRooms`, so quest tracking rides the exact
-same steering path as manual tracking. The HUD echoes the full objectives list.
+1. The last still-required NPC (`RequiredNpcList` minus `DoneNpcList`), if any.
+2. Else an NPC named by the **gold-coloured (`#FCEBAE`) token** in the visible title — the game's
+   curated character/location reference ("Deliver to *Orlock*"). Authoritative, so it's tried before 3.
+3. Else an NPC named only in the objective's **internal dev-name** (`FindNpcMentioned`) — the recipient
+   the visible title can hide (dev-name "Bring a copper bar to *Yabbis'* pond", shown as "the little
+   pond"). Whole-word run match against `NpcLibrary`, latest mention wins.
+4. Else a **gather/mine node** ([QuestNodeLocator](../src/QuestNodeLocator.cs)) — once you're in the
+   region, the objective's item (from its `SpeechInjectionCollection` / item-requirement) is matched to
+   the nearest loaded `IHarvestable` / mineable `DestructibleView` in the scene (`trackedNode`).
+5. Else the gold token as a **place** → its rooms (same routing as a map house).
+
+The resolved target is applied by setting `tracked`/`trackedRooms`/`trackedNode`, so quest tracking
+rides the exact same steering path as manual tracking. Delivery/turn-in objectives with no named
+recipient stay at region level (nothing links them to a hand-in point). The HUD echoes the objectives.
 
 ## Feedback surfaces
 

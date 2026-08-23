@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Director.Core;
 using Director.Nodes;
@@ -34,6 +35,14 @@ namespace DeadReckoning
             if (node == null) return null;
             try
             {
+                // An explicit item requirement is the authoritative "what you must gather/hand in" — a
+                // trade objective's injection collection can carry both a required and a reward item, so
+                // prefer the requirement over injection order.
+                foreach (QuestObjectiveItemRequirementNode r in node.FilterChildNodes<QuestObjectiveItemRequirementNode>())
+                {
+                    if (r != null && r.ItemAsset != null) return r.ItemAsset;
+                }
+
                 SpeechInjectionCollection inj = node.InjectionCollection;
                 if (inj != null && inj.Entries != null)
                 {
@@ -42,11 +51,6 @@ namespace DeadReckoning
                         if (e == null || e.VariableRef == null) continue;
                         if (e.VariableRef.GetRawValue() is ItemAsset ia && ia != null) return ia;
                     }
-                }
-
-                foreach (QuestObjectiveItemRequirementNode r in node.FilterChildNodes<QuestObjectiveItemRequirementNode>())
-                {
-                    if (r != null && r.ItemAsset != null) return r.ItemAsset;
                 }
             }
             catch (Exception ex) { DeadReckoningPlugin.Log.LogWarning($"Objective item lookup failed: {ex.Message}"); }
@@ -87,7 +91,7 @@ namespace DeadReckoning
         /// <summary>True when this interactable still hands the player <paramref name="item"/>: a
         /// harvestable whose yield matches (and is ready), or a mineable destructible whose placed
         /// item matches.</summary>
-        internal static bool Yields(Interactable it, ItemAsset item)
+        private static bool Yields(Interactable it, ItemAsset item)
         {
             if (it == null) return false;
 
@@ -101,21 +105,31 @@ namespace DeadReckoning
             return false;
         }
 
-        // Same asset wins outright; otherwise fall back to a normalised name match, because a
-        // mineable node's placed item can be a distinct asset from the ore it drops.
+        // Same asset wins outright; otherwise fall back to a WORD-level name match, because a mineable
+        // node's placed item can be a distinct asset from the ore it drops. Word-level (one name's word
+        // set is a subset of the other's), not raw substring, so "Coal" doesn't match "Charcoal".
         private static bool Matches(ItemAsset candidate, ItemAsset want)
         {
             if (candidate == null || want == null) return false;
             if (candidate == want) return true;
-            string a = Normalize(((UnityEngine.Object)candidate).name);
-            string b = Normalize(((UnityEngine.Object)want).name);
-            return a.Length > 0 && b.Length > 0 && (a == b || a.Contains(b) || b.Contains(a));
+            HashSet<string> a = NameWords(((UnityEngine.Object)candidate).name);
+            HashSet<string> b = NameWords(((UnityEngine.Object)want).name);
+            if (a.Count == 0 || b.Count == 0) return false;
+            return a.SetEquals(b) || a.IsSupersetOf(b) || b.IsSupersetOf(a);
         }
 
-        private static string Normalize(string s)
+        private static readonly char[] NameSeps = { ' ', '\t', '\n', '\r', '_', '-', '.', ',', '\'', '’', '(', ')', ':' };
+
+        private static HashSet<string> NameWords(string s)
         {
-            if (string.IsNullOrEmpty(s)) return string.Empty;
-            return new string(s.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+            var set = new HashSet<string>();
+            if (string.IsNullOrEmpty(s)) return set;
+            foreach (string part in s.Split(NameSeps, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string w = new string(part.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+                if (w.Length > 0) set.Add(w);
+            }
+            return set;
         }
     }
 }

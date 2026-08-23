@@ -29,14 +29,29 @@ or the UI patches.
 
 ## The target model
 
-- **Single-active-target invariant is hand-maintained.** Every setter (`SetTracked`,
-  `SetTrackedRooms`, `SetPin`, `OnNpcPicked`, `TrackQuest`, `ClearTarget`) MUST clear the other three
-  kinds. Miss one and a stale target shadows the new one (this exact bug once broke NPC tracking
-  after a free-pin). Backlogged for extraction into a `TrackTarget` type.
+- **Single-active-target invariant is hand-maintained.** There are now **five** parallel target
+  fields (`tracked` NPC / `trackedRooms` place / `hasPin` free-pin / `trackedNode` gather-mine node /
+  `trackedQuestNode` quest) and setting one MUST clear the others. The mutation sites are **not just
+  the setters** (`SetTracked`, `SetTrackedRooms`, `SetPin`, the NPC-pick handler, `TrackQuest`,
+  `ClearTarget`) — the highest-risk ones are the **four inline apply-branches in `RefreshQuestTarget`**
+  that write the fields directly without going through a setter. STRUCTURE.md's debt section counts
+  the current sites (~9); keep them in sync. Miss one and a stale target shadows the new one (this
+  exact bug once broke NPC tracking after a free-pin). Backlogged for extraction into a `TrackTarget`
+  type — the single most valuable fix here.
 - **Match NPCs by identity, not reference.** A quest-resolved `NpcConfigAsset` can be a different
   instance than the picker/map widget's — use `SameNpc` (compares `Entity.SerializedGuid`), not `==`.
 - **Free-pin in-room position assumes the player's persisted `RoomPosition` is current.** `PinWorld`
   computes the pin relative to the player's room position; fragile if that persisted value lags.
+- **Quest resolution is heuristic — order and matching matter.** `RefreshQuestTarget` resolves an
+  objective in a deliberate priority: NPC-requirement → gold-token NPC → dev-name NPC
+  (`FindNpcMentioned`) → gather/mine node → gold-token place. The **gold token is the game's curated
+  target, so it must be tried before the free-form dev-name** — a dev-name can mention a non-target NPC
+  in passing, and letting it pre-empt the visible gold-token character would mis-route. If you reorder
+  these, keep gold-token-NPC ahead of the dev-name scan.
+- **Name-matching is word-level, not substring, on purpose.** `FindNpcMentioned` matches whole-word
+  runs (so "Ed" can't match "Echoes" and multi-word names like "Old Man Jenkins" still resolve), and
+  `QuestNodeLocator.Matches` compares item-name **word sets** (so "Coal" doesn't match "Charcoal").
+  Don't "simplify" either back to `string.Contains` — that reintroduces cross-family false positives.
 
 ## UI / Harmony
 
