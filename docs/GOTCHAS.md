@@ -29,13 +29,16 @@ or the UI patches.
 
 ## The target model
 
-- **Single-active-target invariant is hand-maintained.** There are now **five** parallel target
-  fields (`tracked` NPC / `trackedRooms` place / `hasPin` free-pin / `trackedNode` gather-mine node /
-  `trackedQuestNode` quest) and setting one MUST clear the others. The mutation sites are **not just
-  the setters** (`SetTracked`, `SetTrackedRooms`, `SetPin`, the NPC-pick handler, `TrackQuest`,
-  `ClearTarget`) — the highest-risk ones are the **four inline apply-branches in `RefreshQuestTarget`**
-  that write the fields directly without going through a setter. STRUCTURE.md's debt section counts
-  the current sites (~9); keep them in sync. Miss one and a stale target shadows the new one (this
+- **Single-active-target invariant is hand-maintained — and it's two-layer.** There are now **six**
+  parallel target fields: four *destinations* (`tracked` NPC / `trackedRooms` place / `hasPin`
+  free-pin / `trackedNode` gather-mine node) plus two *selections* that drive them
+  (`trackedQuestNode` quest, `trackedJobData` job). Picking a new selection MUST clear every other
+  selection and destination field — in the setters (`SetTracked`, `SetTrackedRooms`, `SetPin`, the
+  NPC-pick handler, `TrackQuest`, `TrackJob`, `ClearTarget`). The **refresh apply-branches are the
+  opposite trap**: the four inline branches in `RefreshQuestTarget` and the one in `RefreshJobTarget`
+  write only the destination fields directly and must **NOT** clear their own selection — clearing it
+  kills the mode they serve. STRUCTURE.md's debt section counts
+  the current sites (~10); keep them in sync. Miss a clear and a stale target shadows the new one (this
   exact bug once broke NPC tracking after a free-pin). Backlogged for extraction into a `TrackTarget`
   type — the single most valuable fix here.
 - **Match NPCs by identity, not reference.** A quest-resolved `NpcConfigAsset` can be a different

@@ -18,14 +18,16 @@ _(none)_
 
 ## P1 — decompose the `SkullGuide` God-file
 
-~1580 lines, ~9 responsibilities. Do these as **separate focused passes**, in this order (each
+~1780 lines, ~10 responsibilities. Do these as **separate focused passes**, in this order (each
 shrinks the next one's diff). All are backlog, not drive-by — they change behaviour-adjacent state.
 
-1. **Target model → `TrackingSelection` + `ResolvedDestination`.** Replace the 9 parallel fields
+1. **Target model → `TrackingSelection` + `ResolvedDestination`.** Replace the 11 parallel fields
    (`tracked`, `trackedRooms`, `pinRoom`/`pinRoomPos`/`hasPin`, `trackedName`, `trackedQuestNode`/
-   `trackedQuestData`, + route cache) whose "clear the other kinds" invariant is hand-repeated in **7**
-   sites (`SetTracked`, `SetTrackedRooms`, `SetPin`, `TrackQuest`, `OnNpcPicked`, `ClearTarget`, and
-   twice inside `RefreshQuestTarget`). Keep the *selection* (what the user picked, incl. display name)
+   `trackedQuestData`, `trackedNode`, `trackedJobData` (v1.2.1), + route cache) whose "clear the other
+   kinds" invariant is hand-repeated in **~10**
+   sites (`SetTracked`, `SetTrackedRooms`, `SetPin`, `TrackQuest`, `TrackJob`, `OnNpcPicked`,
+   `ClearTarget`, the inline apply-branches in `RefreshQuestTarget`, and one in `RefreshJobTarget`).
+   Keep the *selection* (what the user picked, incl. display name)
    separate from the *resolved destination* (recomputed for quests) — a single broad `TrackTarget`
    with all-nullable payloads would just relocate the invariant. Quest state stays orthogonal (it
    *produces* an NPC/place destination). Fold the route cache onto the target so invalidation is

@@ -21,19 +21,25 @@ from there. There is no other update loop; the Harmony patches only inject UI th
 
 ## The target model (single active target)
 
-One target at a time, of one of five kinds, held as separate fields in `SkullGuide`:
+One *selection* at a time, held as separate fields in `SkullGuide`. The model is **two-layer**:
+NPC / place / free pin / gather-node are *destination* fields the skull steers by; quest and job are
+*selections* that stay set while a throttled refresh re-resolves which destination to write:
 
-| Kind | Fields | Set by |
-|---|---|---|
-| NPC | `tracked : NpcConfigAsset` | picker, Relationships button, map NPC badge |
-| Place/house | `trackedRooms : List<RoomAsset>` | map house badge |
-| Free pin | `pinRoom` + `pinRoomPos` + `hasPin` (also fills `trackedRooms`) | map double-click on empty spot |
-| Gather/mine node | `trackedNode : Transform` | quest resolution, via `QuestNodeLocator` (the live in-scene vein/bush) |
-| Quest | `trackedQuestNode` + `trackedQuestData` | Quest Log "Seek Quest" button (drives the kinds above) |
+| Kind | Layer | Fields | Set by |
+|---|---|---|---|
+| NPC | destination | `tracked : NpcConfigAsset` | picker, Relationships button, map NPC badge — or a quest/job refresh |
+| Place/house | destination | `trackedRooms : List<RoomAsset>` | map house badge — or a quest refresh |
+| Free pin | destination | `pinRoom` + `pinRoomPos` + `hasPin` (also fills `trackedRooms`) | map double-click on empty spot |
+| Gather/mine node | destination | `trackedNode : Transform` | quest resolution, via `QuestNodeLocator` (the live in-scene vein/bush) |
+| Quest | selection | `trackedQuestNode` + `trackedQuestData` | Quest Log "Seek Quest" button |
+| Job | selection | `trackedJobData : JobPersistence` | Quest Log "Seek Job" button |
 
-**Invariant:** setting one kind clears the others. This is enforced by hand — not only in the setters
-(`SetTracked`, `SetTrackedRooms`, `SetPin`, the NPC-pick handler, `TrackQuest`, `ClearTarget`) but
-also in the **four inline apply-branches of `RefreshQuestTarget`**, which write the fields directly.
+**Invariant:** picking a new selection clears every *other* selection **and** destination field —
+enforced by hand in the setters (`SetTracked`, `SetTrackedRooms`, `SetPin`, the NPC-pick handler,
+`TrackQuest`, `TrackJob`, `ClearTarget`). The **refresh apply-branches are deliberately different**:
+the four inline branches of `RefreshQuestTarget` and the one in `RefreshJobTarget` re-write only the
+destination fields and must **not** clear their own selection — that's what keeps the mode alive
+between refreshes.
 A known footgun (see [GOTCHAS.md](GOTCHAS.md); a past bug where a stale free-pin shadowed an NPC came
 from exactly this). Top candidate for extraction into a `TrackTarget` type ([BACKLOG.md](BACKLOG.md)).
 
@@ -95,6 +101,19 @@ The resolved target is applied by setting `tracked`/`trackedRooms`/`trackedNode`
 rides the exact same steering path as manual tracking. Delivery/turn-in objectives with no named
 recipient stay at region level (nothing links them to a hand-in point). The HUD echoes the objectives.
 
+## Job tracking
+
+Jobs (the job-board tasks listed under the quest tab) render through `QuestScreen.ShowJobInfo` — a
+separate path from `ShowQuestInfo` — so they get their own patch and a "Seek Job" binding of the same
+button (v1.2.1; before that the button was stale on job entries). `SkullGuide.TrackJob` holds the
+`JobPersistence` (identity by `Guid`), and `RefreshJobTarget` (throttled, like the quest refresh)
+resolves the **hand-in NPC** via `JobPersistence.CompletionNpcConfigAsset` — the game's own
+"sub-persistence override ?? subject NPC", so job types that switch hand-in NPC mid-way stay correct —
+and applies it by setting `tracked`, riding the same NPC steering. A completed or past-deadline job
+`ClearTarget()`s (dismisses the skull); completed/expired entries get no button. The HUD shows
+"Seeking: Job for <NPC>", matching the game's own job title. There is no per-step objective data on a
+job (requirements live in the sub-persistence), so job tracking is hand-in-NPC-level only.
+
 ## Feedback surfaces
 
 - **Seeking HUD** (`TrackHud`) — screen-space overlay, own canvas + Gelica font; "Seeking: X" or the
@@ -114,6 +133,7 @@ while our menus are open — not additive, on purpose.
 |---|---|---|---|
 | `RelationshipDailyActivitiesWidgetSetupPatch` | Postfix (additive) | `RelationshipDailyActivitiesWidget.Setup` | adds the Track pin to the daily-activity row |
 | `QuestScreenShowInfoPatch` | Postfix (additive) | `QuestScreen.ShowQuestInfo` | adds the "Seek Quest" button |
+| `QuestScreenShowJobInfoPatch` | Postfix (additive) | `QuestScreen.ShowJobInfo` | rebinds that button as "Seek Job" on job entries (hides it for completed/expired jobs) |
 | `InputMouseScrollDeltaPatch` | Postfix (value-replacing) | `Input.MouseScrollDelta` getter | zeroes scroll while our menus are open |
 | `GameCameraZoomBlockPatch` | **Prefix (skips)** | `GameCamera.ProcessPlayerCameraToggle` | skips the game's zoom-toggle while our menus are open |
 | `FarSightCoexistPatch` | Postfix (reflection, only if installed) | `FarSightPlugin.IsGameplay` | makes Far Sight stand down over our menus |

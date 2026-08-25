@@ -21,7 +21,7 @@ Ships two files: `DeadReckoning.dll` + `track-icon.png`.
 | Component | File | Responsibility |
 |---|---|---|
 | **Plugin entry** | `src/Plugin.cs` | `DeadReckoningPlugin`: BepInEx entry, config binding, `Harmony.PatchAll`, lazy Far Sight coexistence patch, `Log`. Creates the `SkullGuide` MonoBehaviour. |
-| **Skull driver** | `src/SkullGuide.cs` | **The runtime core (God-file, ~1680 lines).** Target model + single-active-target invariant, critter spawn/despawn lifecycle, the per-frame `Update` loop, steering (leash, wall-avoid, ground-clamp, path-lead, idle spring-follow), NPC picker UI, quest-objective resolution (NPC/dev-name/gather-node/location) + quest HUD text, map double-click tracking + free pin, flame recolour, marker-highlight orchestration, diagnostics probes. See **Structural debt**. |
+| **Skull driver** | `src/SkullGuide.cs` | **The runtime core (God-file, ~1780 lines).** Target model + single-active-target invariant, critter spawn/despawn lifecycle, the per-frame `Update` loop, steering (leash, wall-avoid, ground-clamp, path-lead, idle spring-follow), NPC picker UI, quest-objective resolution (NPC/dev-name/gather-node/location) + quest HUD text, job hand-in resolution, map double-click tracking + free pin, flame recolour, marker-highlight orchestration, diagnostics probes. See **Structural debt**. |
 | **Quest node locator** | `src/QuestNodeLocator.cs` | Static. Bridges a "gather/mine `<item>`" objective to the world: reads the objective's `ItemAsset` from its `InjectionCollection`, then scans loaded `Interactable`s for a matching `IHarvestable`/`DestructibleView` node (the copper vein, the bush). Feeds `SkullGuide`'s quest resolution. |
 | **Cross-room routing** | `src/RoomRouter.cs` | Static. BFS over `NavigationLibrary`'s room graph → world position of the door to head toward a target room. |
 | **In-room pathing** | `src/PathGuide.cs` | Wraps the game's A* Pathfinding graph: a lead point a set distance along the walkable path to the target. |
@@ -30,7 +30,7 @@ Ships two files: `DeadReckoning.dll` + `track-icon.png`.
 | **Picker card highlight** | `src/PickerCardHighlight.cs` | Clones the NPC picker card's native selection frame, recoloured purple, + name-plate tint. |
 | **Map badge highlight** | `src/MapMarkerTint.cs` | Recolours a tracked house/NPC map badge + adds ping waves (`DRMarkerTint` behaviour). |
 | **Relationships Track button** | `src/RelationshipTrackButton.cs` | Harmony patch on `RelationshipDailyActivitiesWidget.Setup` → a Track pin in the daily-activity row (`DRTrackRef`). |
-| **Quest Log Track button** | `src/QuestTrackButton.cs` | Harmony patch on `QuestScreen.ShowQuestInfo` → a "Seek Quest" button (`DRQuestButton`). |
+| **Quest Log Track button** | `src/QuestTrackButton.cs` | Harmony patches on `QuestScreen.ShowQuestInfo` / `ShowJobInfo` → one "Seek Quest" / "Seek Job" button (`DRQuestButton`, quest-or-job union). |
 | **Scroll coexistence** | `src/CameraScrollPatch.cs` | `WorldScrollBlock` flags + Harmony patches that stop the world camera zooming while the picker / Relationships panel is open, incl. the Far Sight mod coexistence postfix. |
 | **Track icon loader** | `src/TrackIcon.cs` | Loads `track-icon.png` (config override → bundled) into a `Sprite`. |
 | **Shared UI helpers** | `src/DRUi.cs`, `src/HoverScale.cs`, `src/DRIcons.cs` | `DRUi.FindDeep` (recursive transform search), `HoverScale` (pointer-hover scale animation, used by four callers), `DRIcons.BuildX` (draws an ✕). |
@@ -48,12 +48,13 @@ Plugin ──creates──▶ SkullGuide ──owns──▶ TrackHud, MapPin, P
 ```
 
 `SkullGuide.Instance` is the single shared entry point the Harmony-injected UI buttons call
-(`ToggleTrack`, `ToggleQuest`, `IsTracked`, `IsQuestTracked`). Everything reads `DeadReckoningPlugin.Log`
+(`ToggleTrack`, `ToggleQuest`, `ToggleJob`, `IsTracked`, `IsQuestTracked`, `IsJobTracked`). Everything reads `DeadReckoningPlugin.Log`
 and the `ConfigEntry` statics — that's an accepted hub, not debt.
 
 ## Key flows
 
-- **Track something** → a setter (`SetTracked` / `SetTrackedRooms` / `SetPin` / `TrackQuest`) clears
+- **Track something** → a setter (`SetTracked` / `SetTrackedRooms` / `SetPin` / `TrackQuest` /
+  `TrackJob`) clears
   the other target kinds (single-active-target invariant) and calls `EnsureSkull`; the `Update` loop
   spawns/re-spawns the critter and `Steer()` drives it each frame.
 - **Steer** → `TrackedWorldPos()` resolves the live target/door → `PathGuide`/`RoomRouter` shape the
@@ -93,14 +94,15 @@ pass). Full triage with priorities in [docs/BACKLOG.md](docs/BACKLOG.md).
   cards, not map markers.
 
 **Open — the big one (backlogged, needs its own focused passes; do NOT drive-by):**
-- **`SkullGuide.cs` is a ~1680-line God-file** (~2× the 800-line cap) spanning ~9 responsibilities.
+- **`SkullGuide.cs` is a ~1780-line God-file** (~2× the 800-line cap) spanning ~10 responsibilities.
   The review's recommended extraction order (the target model first, because it shrinks every other
   seam's diff):
   1. **Target model** → a `TrackingSelection` (what the user chose) + `ResolvedDestination` (where to
-     steer) pair. Today it's **10** parallel fields (a `trackedNode` gather/mine target was added) with
-     a "clear the other kinds" invariant hand-repeated across **~9** sites (`RefreshQuestTarget`'s apply
-     block clears inline four times) — the exact shape that caused the past "stale free-pin shadowed an
-     NPC" bug, and now grown further. This is the top extraction target. **P1.**
+     steer) pair. Today it's **11** parallel fields (a `trackedNode` gather/mine target, then a
+     `trackedJobData` job target in v1.2.1) with a "clear the other kinds" invariant hand-repeated
+     across **~10** sites (`RefreshQuestTarget`'s apply block clears inline four times, and
+     `RefreshJobTarget` adds a fifth direct-write branch) — the exact shape that caused the past
+     "stale free-pin shadowed an NPC" bug, and still growing. This is the top extraction target. **P1.**
   2. **Quest-objective resolution** → `QuestObjectiveResolver` + a separate HUD formatter (it reads
      persistence/scene/time and parses rich text — not "pure/static" as first assumed). **P1.**
   3. **NPC picker UI** *and* **map-tracking input** → two controllers that issue tracking commands.

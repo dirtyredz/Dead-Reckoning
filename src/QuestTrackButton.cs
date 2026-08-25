@@ -48,26 +48,31 @@ namespace DeadReckoning
         private static readonly FieldInfo ObjectiveContainerField =
             AccessTools.Field(typeof(QuestScreen), "objectiveContainer");
 
-        internal static void Attach(QuestScreen screen, QuestListWidget widget)
+        /// <summary>Shared acquire-or-hide: resolve the panel row, then either hide the button (nothing
+        /// seekable is shown) or return it built/reused and active, ready for its mode fields + Refresh.</summary>
+        private static DRQuestButton AcquireButton(QuestScreen screen, bool seekable)
         {
             var container = ObjectiveContainerField?.GetValue(screen) as GameObject;
-            if (container == null) return;
+            if (container == null) return null;
             Transform row = container.transform.parent; // the vertical stack that holds the objectives block
-            if (row == null) return;
+            if (row == null) return null;
 
             Transform existing = row.Find(ButtonName);
-            bool haveQuest = widget != null && widget.StartQuestNode != null && widget.Data != null;
-
-            if (!haveQuest)
+            if (!seekable)
             {
                 if (existing != null) existing.gameObject.SetActive(false);
-                return;
+                return null;
             }
 
             DRQuestButton btn = existing != null ? existing.GetComponent<DRQuestButton>() : Build(row, container.transform.GetSiblingIndex(), screen);
-            if (btn == null) return;
+            if (btn != null) btn.gameObject.SetActive(true);
+            return btn;
+        }
 
-            btn.gameObject.SetActive(true);
+        internal static void Attach(QuestScreen screen, QuestListWidget widget)
+        {
+            DRQuestButton btn = AcquireButton(screen, widget != null && widget.StartQuestNode != null && widget.Data != null);
+            if (btn == null) return;
             btn.Node = widget.StartQuestNode;
             btn.Data = widget.Data;
             btn.Job = null;
@@ -76,25 +81,9 @@ namespace DeadReckoning
 
         internal static void AttachJob(QuestScreen screen, JobListWidget widget)
         {
-            var container = ObjectiveContainerField?.GetValue(screen) as GameObject;
-            if (container == null) return;
-            Transform row = container.transform.parent;
-            if (row == null) return;
-
-            Transform existing = row.Find(ButtonName);
             JobPersistence job = widget != null ? widget.Data : null;
-            bool seekable = job != null && !job.IsCompleted && !job.IsPastDeadline;
-
-            if (!seekable)
-            {
-                if (existing != null) existing.gameObject.SetActive(false);
-                return;
-            }
-
-            DRQuestButton btn = existing != null ? existing.GetComponent<DRQuestButton>() : Build(row, container.transform.GetSiblingIndex(), screen);
+            DRQuestButton btn = AcquireButton(screen, job != null && !job.IsCompleted && !job.IsPastDeadline);
             if (btn == null) return;
-
-            btn.gameObject.SetActive(true);
             btn.Node = null;
             btn.Data = null;
             btn.Job = job;
