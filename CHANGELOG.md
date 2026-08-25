@@ -6,7 +6,27 @@ subsystems, the game types leaned on, and the things that were tried and dropped
 One entry per **released** version, not per build — see
 [12-versioning-and-release.md](../../12-versioning-and-release.md).
 
-## 1.2.0
+## 1.2.1
+
+Jobs in the quest tab stop lying about being tracked — and become trackable for real.
+
+### Fixed
+
+- **Job entries no longer show a stale green "Seeking Quest" button.** Jobs render through
+  `QuestScreen.ShowJobInfo`, a separate path from `ShowQuestInfo`, and only the latter was patched —
+  so the DR button kept whatever quest it last showed. While seeking a quest, every job entry
+  displayed "Seeking Quest" in green, and clicking it toggled *that quest*, not the job.
+
+### Added
+
+- **"Seek Job"** — the job's Quest Log entry now gets its own track button. `SkullGuide` gains a job
+  mode mirroring quest mode: it holds the `JobPersistence` (identity by `Guid`) and a throttled
+  `RefreshJobTarget` drives the existing NPC steering toward the job's hand-in NPC
+  (`CompletionNpcConfigAsset` — follows sub-persistence overrides, so jobs that change hand-in NPC
+  mid-way stay correct). Auto-clears when the job completes or passes its deadline; completed/expired
+  entries get no button. HUD reads "Seeking: Job for \<NPC\>", matching the game's own job title.
+
+
 
 Quest tracking gets precise — it points at the actual node/recipient, not just the region — and the
 idle "not seeking" behaviour is reworked so it reads as clearly different from leading.

@@ -5,8 +5,7 @@ tracking — an NPC, a house or place, or a pin you drop on the map. You physica
 instead of reading an icon pinned to the screen edge.
 
 **Status:** ✅ **Released — [Nexus mod 144](https://www.nexusmods.com/moonlightpeaks/mods/144),
-current version v1.1.0** (first published 2026-08-21 at v1.0.0; the page's Version field was bumped
-to 1.1.0 on 2026-08-22 to match the file). Builds clean and auto-deploys to
+current version v1.2.1** (first published 2026-08-21 at v1.0.0). Builds clean and auto-deploys to
 `BepInEx/plugins/MoonlightPeaksMods/DeadReckoning`. A replacement for lockyaw's
 [On-screen Quest and Character Tracker](https://www.nexusmods.com/moonlightpeaks/mods/48) (#48).
 

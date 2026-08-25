@@ -22,7 +22,7 @@ every sweep with `git ls-files --cached --others --exclude-standard`. Workspace 
 
 A BepInEx 5 / HarmonyX plugin (netstandard2.1) for the Unity Mono game *Moonlight Peaks*. It spawns
 the in-game soul-blob "skull" and steers it toward a tracked NPC / place / map pin / quest. Released
-as [Nexus mod 144](https://www.nexusmods.com/moonlightpeaks/mods/144), current v1.1.0.
+as [Nexus mod 144](https://www.nexusmods.com/moonlightpeaks/mods/144), current v1.2.1.
 
 ## Conventions
 
