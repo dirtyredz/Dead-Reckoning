@@ -46,6 +46,9 @@ namespace DeadReckoning
         private QuestPersistence trackedQuestData;
         private float nextQuestRefresh;
 
+        private JobPersistence trackedJobData;    // job target: steer to its hand-in NPC
+        private float nextJobRefresh;
+
         private readonly TrackHud hud = new TrackHud();
         private readonly MapPin mapPin = new MapPin();
         private readonly PathGuide pathGuide = new PathGuide();
@@ -92,7 +95,7 @@ namespace DeadReckoning
         {
             tracked = cfg;
             trackedRooms = null; hasPin = false; // single target
-            trackedQuestNode = null; trackedQuestData = null; trackedNode = null;
+            trackedQuestNode = null; trackedQuestData = null; trackedJobData = null; trackedNode = null;
             trackedName = cfg != null ? AddressableLibrary<NpcLibrary>.Instance.GetNpcName(cfg, checkIsNameRevealed: false) : null;
             cachedRoute = null; nextRouteAt = 0f;
             DeadReckoningPlugin.Log.LogInfo($"Now tracking: {trackedName ?? "<none>"}");
@@ -103,7 +106,7 @@ namespace DeadReckoning
         {
             trackedRooms = rooms != null ? rooms.Where(r => r != null).ToList() : null;
             tracked = null; hasPin = false; // single target
-            trackedQuestNode = null; trackedQuestData = null; trackedNode = null;
+            trackedQuestNode = null; trackedQuestData = null; trackedJobData = null; trackedNode = null;
             trackedName = name;
             cachedRoute = null; nextRouteAt = 0f;
             DeadReckoningPlugin.Log.LogInfo($"Now tracking place: {name ?? "<none>"}");
@@ -115,7 +118,7 @@ namespace DeadReckoning
             trackedRooms = new List<RoomAsset> { room }; // reuse room routing when out of the room
             pinRoom = room; pinRoomPos = roomPos; hasPin = true;
             tracked = null;
-            trackedQuestNode = null; trackedQuestData = null; trackedNode = null;
+            trackedQuestNode = null; trackedQuestData = null; trackedJobData = null; trackedNode = null;
             trackedName = name;
             cachedRoute = null; nextRouteAt = 0f;
             DeadReckoningPlugin.Log.LogInfo($"Now tracking pin: {name}");
@@ -169,13 +172,75 @@ namespace DeadReckoning
         {
             trackedQuestNode = node;
             trackedQuestData = data;
-            tracked = null; trackedRooms = null; hasPin = false; trackedNode = null;
+            tracked = null; trackedRooms = null; hasPin = false; trackedNode = null; trackedJobData = null;
             trackedName = node != null ? node.GetQuestTitle() : null;
             cachedRoute = null; nextRouteAt = 0f; nextQuestRefresh = 0f;
             DeadReckoningPlugin.Log.LogInfo($"Now tracking quest: {trackedName ?? "<none>"}");
             if (DeadReckoningPlugin.VerboseLogging.Value) DumpQuest();
             RefreshQuestTarget();
             EnsureSkull();
+        }
+
+        // --- Job tracking (used by the Quest Log's job entries) -----------------------------------
+
+        internal bool IsJobTracked(JobPersistence data) =>
+            trackedJobData != null && data != null && trackedJobData.Guid == data.Guid;
+
+        internal void ToggleJob(JobPersistence data)
+        {
+            if (IsJobTracked(data)) ClearTarget();
+            else TrackJob(data);
+        }
+
+        internal void TrackJob(JobPersistence data)
+        {
+            trackedJobData = data;
+            trackedQuestNode = null; trackedQuestData = null;
+            tracked = null; trackedRooms = null; hasPin = false; trackedNode = null;
+            trackedName = JobTitle(data);
+            cachedRoute = null; nextRouteAt = 0f; nextJobRefresh = 0f;
+            DeadReckoningPlugin.Log.LogInfo($"Now tracking job: {trackedName ?? "<none>"}");
+            RefreshJobTarget();
+            EnsureSkull();
+        }
+
+        /// <summary>"Job for <npc>", matching the Quest Log's own job title (minus status prefix).</summary>
+        private static string JobTitle(JobPersistence data)
+        {
+            try
+            {
+                return LocalizationLibrary.Translate("journal-quest-screen-job-title-prefix") + " " +
+                       AddressableLibrary<NpcLibrary>.Instance.GetNpcName(data.SubjectNpcAssetRef.Asset, checkIsNameRevealed: false);
+            }
+            catch { return "Job"; }
+        }
+
+        /// <summary>A job steers to its hand-in NPC. Re-resolved on a throttle because some job types
+        /// switch the hand-in NPC as the job progresses, and completing (or missing) the job must
+        /// dismiss the skull rather than leave it seeking forever.</summary>
+        private void RefreshJobTarget()
+        {
+            if (trackedJobData == null) return;
+            if (Time.time < nextJobRefresh) return;
+            nextJobRefresh = Time.time + 0.5f;
+
+            try
+            {
+                if (trackedJobData.IsCompleted || trackedJobData.IsPastDeadline)
+                {
+                    DeadReckoningPlugin.Log.LogInfo($"Tracked job {(trackedJobData.IsCompleted ? "completed" : "expired")} — stopping: {trackedName ?? "<none>"}");
+                    ClearTarget();
+                    return;
+                }
+
+                NpcConfigAsset cfg = trackedJobData.CompletionNpcConfigAsset;
+                if (tracked != cfg)
+                {
+                    tracked = cfg; trackedRooms = null; hasPin = false; trackedNode = null;
+                    cachedRoute = null; nextRouteAt = 0f;
+                }
+            }
+            catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Job target refresh failed: {e.Message}"); }
         }
 
         /// <summary>Objectives of the tracked quest, in order (node + its saved state).</summary>
@@ -648,6 +713,7 @@ namespace DeadReckoning
             }
 
             if (trackedQuestNode != null) RefreshQuestTarget();
+            if (trackedJobData != null) RefreshJobTarget();
             if (active != null) { Steer(); ApplyFlameColor(); }
 
             UpdateHud();
@@ -1041,7 +1107,7 @@ namespace DeadReckoning
         {
             try
             {
-                bool seeking = tracked != null || trackedRooms != null || hasPin || trackedQuestNode != null;
+                bool seeking = tracked != null || trackedRooms != null || hasPin || trackedQuestNode != null || trackedJobData != null;
                 Transform existing = DRUi.FindDeep(screen.transform, StopButtonName);
                 if (existing != null) { existing.gameObject.SetActive(seeking); if (!seeking) return; }
                 if (!seeking) return;
@@ -1106,7 +1172,7 @@ namespace DeadReckoning
 
             tracked = picked;
             trackedRooms = null; hasPin = false; // clear any place/free-pin target so the NPC actually wins
-            trackedQuestNode = null; trackedQuestData = null; trackedNode = null; // picking someone overrides quest tracking
+            trackedQuestNode = null; trackedQuestData = null; trackedJobData = null; trackedNode = null; // picking someone overrides quest tracking
             trackedName = tracked != null
                 ? AddressableLibrary<NpcLibrary>.Instance.GetNpcName(tracked, checkIsNameRevealed: false)
                 : null;
@@ -1139,7 +1205,7 @@ namespace DeadReckoning
             tracked = null;
             trackedRooms = null;
             hasPin = false;
-            trackedQuestNode = null; trackedQuestData = null; trackedNode = null;
+            trackedQuestNode = null; trackedQuestData = null; trackedJobData = null; trackedNode = null;
             trackedName = null;
             cachedRoute = null; nextRouteAt = 0f;
             // No target => no skull. It only exists while you're tracking something now.

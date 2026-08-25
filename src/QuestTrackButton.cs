@@ -24,6 +24,21 @@ namespace DeadReckoning
         }
     }
 
+    /// <summary>
+    /// Jobs share the quest tab's detail panel but go through ShowJobInfo, not ShowQuestInfo — so
+    /// without this the Track button keeps whatever quest it last showed (stale green "Seeking
+    /// Quest" on every job). Rebind it as a "Seek Job" button for the shown job instead.
+    /// </summary>
+    [HarmonyPatch(typeof(QuestScreen), "ShowJobInfo")]
+    internal static class QuestScreenShowJobInfoPatch
+    {
+        private static void Postfix(QuestScreen __instance, JobListWidget widget)
+        {
+            try { QuestTrackButton.AttachJob(__instance, widget); }
+            catch (Exception e) { DeadReckoningPlugin.Log.LogWarning($"Job track button attach failed: {e.Message}"); }
+        }
+    }
+
     internal static class QuestTrackButton
     {
         private const string ButtonName = "DR_QuestTrackButton";
@@ -55,15 +70,46 @@ namespace DeadReckoning
             btn.gameObject.SetActive(true);
             btn.Node = widget.StartQuestNode;
             btn.Data = widget.Data;
+            btn.Job = null;
+            Refresh(btn);
+        }
+
+        internal static void AttachJob(QuestScreen screen, JobListWidget widget)
+        {
+            var container = ObjectiveContainerField?.GetValue(screen) as GameObject;
+            if (container == null) return;
+            Transform row = container.transform.parent;
+            if (row == null) return;
+
+            Transform existing = row.Find(ButtonName);
+            JobPersistence job = widget != null ? widget.Data : null;
+            bool seekable = job != null && !job.IsCompleted && !job.IsPastDeadline;
+
+            if (!seekable)
+            {
+                if (existing != null) existing.gameObject.SetActive(false);
+                return;
+            }
+
+            DRQuestButton btn = existing != null ? existing.GetComponent<DRQuestButton>() : Build(row, container.transform.GetSiblingIndex(), screen);
+            if (btn == null) return;
+
+            btn.gameObject.SetActive(true);
+            btn.Node = null;
+            btn.Data = null;
+            btn.Job = job;
             Refresh(btn);
         }
 
         private static void Refresh(DRQuestButton btn)
         {
-            bool tracked = SkullGuide.Instance != null && SkullGuide.Instance.IsQuestTracked(btn.Data);
+            bool isJob = btn.Job != null;
+            bool tracked = SkullGuide.Instance != null &&
+                (isJob ? SkullGuide.Instance.IsJobTracked(btn.Job) : SkullGuide.Instance.IsQuestTracked(btn.Data));
             if (btn.Label != null)
             {
-                btn.Label.text = tracked ? "Seeking Quest" : "Seek Quest";
+                btn.Label.text = isJob ? (tracked ? "Seeking Job" : "Seek Job")
+                                       : (tracked ? "Seeking Quest" : "Seek Quest");
                 btn.Label.color = tracked ? TrackingText : IdleText;
             }
             if (btn.Icon != null) btn.Icon.color = tracked ? TrackingText : Color.white;
@@ -124,19 +170,23 @@ namespace DeadReckoning
 
             button.onClick.AddListener(() =>
             {
-                if (SkullGuide.Instance != null && drb.Node != null && drb.Data != null)
-                    SkullGuide.Instance.ToggleQuest(drb.Node, drb.Data);
+                if (SkullGuide.Instance != null)
+                {
+                    if (drb.Job != null) SkullGuide.Instance.ToggleJob(drb.Job);
+                    else if (drb.Node != null && drb.Data != null) SkullGuide.Instance.ToggleQuest(drb.Node, drb.Data);
+                }
                 Refresh(drb);
             });
             return drb;
         }
     }
 
-    /// <summary>Holds the quest button's pieces + the quest it currently represents.</summary>
+    /// <summary>Holds the quest button's pieces + the quest OR job it currently represents.</summary>
     internal sealed class DRQuestButton : MonoBehaviour
     {
         internal StartQuestNode Node;
         internal QuestPersistence Data;
+        internal JobPersistence Job;
         internal Image Bg;
         internal Image Icon;
         internal TextMeshProUGUI Label;
