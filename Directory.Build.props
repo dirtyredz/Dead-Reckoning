@@ -6,6 +6,8 @@
     <MoonlightPeaksBepInExCorePath>$(MoonlightPeaksGamePath)\BepInEx\core</MoonlightPeaksBepInExCorePath>
     <MoonlightPeaksPluginDeployPath>$(MoonlightPeaksGamePath)\BepInEx\plugins\MoonlightPeaksMods</MoonlightPeaksPluginDeployPath>
     <LangVersion>latest</LangVersion>
+    <!-- Surface the .editorconfig code-style rules as build warnings. -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
 
 

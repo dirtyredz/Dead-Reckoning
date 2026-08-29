@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  format:
+    name: Format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      # Folder mode only — building needs the game's managed DLLs, which no runner has. Scoped to
+      # git-tracked sources so it never descends into gitignored .claude/worktrees checkouts.
+      - name: dotnet format --verify-no-changes
+        run: dotnet format whitespace --folder . --include $(git ls-files '*.cs' | tr '
+' ' ') --verify-no-changes

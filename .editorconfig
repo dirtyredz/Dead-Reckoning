@@ -1,0 +1,44 @@
+# EditorConfig for the Moonlight Peaks BepInEx mods.
+# The rules were MEASURED from the existing code, not imposed: 4-space indent (2483 lines, zero
+# tabs), Allman braces (3227 occurrences vs 0 K&R), block-scoped namespaces (167 vs 0), and `var`
+# preferred (1618 vs 493). So this locks in the style already written rather than introducing one.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.cs]
+indent_size = 4
+
+# Braces on their own line — the existing style, without exception.
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_new_line_before_members_in_object_initializers = true
+
+# Namespaces here are block-scoped, not file-scoped.
+csharp_style_namespace_declarations = block_scoped:suggestion
+
+# `var` is the norm in this codebase.
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_between_method_declaration_parameter_list_parentheses = false
+csharp_space_between_method_call_parameter_list_parentheses = false
+
+# Unused usings. C# linting lives at build time, not in a separate linter binary — see
+# EnforceCodeStyleInBuild in Directory.Build.props.
+dotnet_diagnostic.IDE0005.severity = warning
+
+[*.{csproj,props,targets,xml}]
+indent_size = 2
+
+[*.{json,yml,yaml,md}]
+indent_size = 2
