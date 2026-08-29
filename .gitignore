@@ -15,5 +15,5 @@ dist/
 decompiled/
 
 # Structure-review gate markers (local state, not source)
-.structure-review-pending
+.structure-review-pending*
 .structure-review-paused
