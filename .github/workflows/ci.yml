@@ -17,5 +17,7 @@ jobs:
       # Folder mode only — building needs the game's managed DLLs, which no runner has. Scoped to
       # git-tracked sources so it never descends into gitignored .claude/worktrees checkouts.
       - name: dotnet format --verify-no-changes
-        run: dotnet format whitespace --folder . --include $(git ls-files '*.cs' | tr '
-' ' ') --verify-no-changes
+        run: |
+          files=$(git ls-files '*.cs' | paste -sd' ' -)
+          if [ -z "$files" ]; then echo "no C# sources"; exit 0; fi
+          dotnet format whitespace --folder . --include $files --verify-no-changes
