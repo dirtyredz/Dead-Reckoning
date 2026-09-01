@@ -26,8 +26,13 @@ as [Nexus mod 144](https://www.nexusmods.com/moonlightpeaks/mods/144), current v
 
 ## Conventions
 
-- **Layout:** plugin `.cs` **flat in `src/`** (no `src/DeadReckoning/`); docs + `pack.ps1` at the
-  mod root.
+- **Layout:** plugin `.cs` lives under `src/` in three responsibility folders — `src/game/`
+  (Harmony patches + live-game bridges), `src/ui/` (panels, widgets, sprites, HUD), `src/core/`
+  (domain logic + state) — with only `Plugin.cs` beside the `.csproj`; docs + `pack.ps1` at the mod
+  root. The enforced homes are declared in [STRUCTURE.md](STRUCTURE.md#layout) and checked by the
+  placement hook — add a home there before adding a folder.
+- **One namespace:** every type is in the flat `DeadReckoning` namespace regardless of folder. C#
+  does not tie namespaces to directories — never add or change a namespace to mirror a folder.
 - **Versioning:** bump `<Version>` in `src/DeadReckoning.csproj` only, only when publishing. Never
   hardcode a version in `Plugin.cs` (`ModBuildInfo.Version` single-sources it).
 - **Synced canonicals:** `pack.ps1` and `Directory.Build.props` are workspace-synced — do **not**

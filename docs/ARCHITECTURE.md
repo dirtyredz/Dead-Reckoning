@@ -81,7 +81,7 @@ forward — smooth as you move. Routes like a land NPC (water-excluded tag mask)
 
 ## Quest tracking
 
-The Quest Log "Seek Quest" button ([QuestTrackButton.cs](../src/QuestTrackButton.cs)) calls
+The Quest Log "Seek Quest" button ([QuestTrackButton.cs](../src/ui/QuestTrackButton.cs)) calls
 `SkullGuide.TrackQuest`. First, if `QuestPersistence.IsCompleted` is set the quest is done, so
 `RefreshQuestTarget` `ClearTarget()`s (dismisses the skull) rather than idling forever. Otherwise each
 refresh (throttled) reads the current in-progress objective and resolves its target, in priority order:
@@ -92,7 +92,7 @@ refresh (throttled) reads the current in-progress objective and resolves its tar
 3. Else an NPC named only in the objective's **internal dev-name** (`FindNpcMentioned`) — the recipient
    the visible title can hide (dev-name "Bring a copper bar to *Yabbis'* pond", shown as "the little
    pond"). Whole-word run match against `NpcLibrary`, latest mention wins.
-4. Else a **gather/mine node** ([QuestNodeLocator](../src/QuestNodeLocator.cs)) — once you're in the
+4. Else a **gather/mine node** ([QuestNodeLocator](../src/game/QuestNodeLocator.cs)) — once you're in the
    region, the objective's item (from its `SpeechInjectionCollection` / item-requirement) is matched to
    the nearest loaded `IHarvestable` / mineable `DestructibleView` in the scene (`trackedNode`).
 5. Else the gold token as a **place** → its rooms (same routing as a map house).

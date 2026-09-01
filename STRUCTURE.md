@@ -11,29 +11,78 @@ shape*; for how the tracking system actually works see [docs/ARCHITECTURE.md](do
 A BepInEx 5 / HarmonyX plugin for the Unity Mono game *Moonlight Peaks*. It spawns the in-game
 soul-blob "skull" critter and steers it toward whatever the player is tracking (an NPC, a house/
 place, a free-dropped map pin, or a quest objective), plus the on-screen and on-map feedback that
-tells you what's being sought. Plugin source is **flat in `src/`** (no `src/DeadReckoning/`);
-version is single-sourced from `src/DeadReckoning.csproj` via `GenerateModBuildInfo`.
+tells you what's being sought. Plugin source sits under `src/` in three responsibility folders
+(`game/`, `ui/`, `core/`), with only `Plugin.cs` beside the `.csproj` — see [Layout](#layout).
+Version is single-sourced from `src/DeadReckoning.csproj` via `GenerateModBuildInfo`.
 
 Ships two files: `DeadReckoning.dll` + `track-icon.png`.
+
+## Layout
+
+Where each kind of file is allowed to live. The tree is for humans; the **Enforced homes** bullets
+under it are parsed by the placement hook, so keep the two halves in agreement.
+
+```
+DeadReckoning/
+├── pack.ps1                  # workspace-synced release packager (must stay at the mod root)
+├── STRUCTURE.md              # this map · README/CLAUDE/CHANGELOG/DESIGN/NEXUS/RELEASING alongside
+├── assets/                   # track-icon.png (shipped beside the DLL)
+├── docs/                     # ARCHITECTURE · DECISIONS · FEATURES · ROADMAP · BACKLOG · GOTCHAS
+├── screenshots/              # Nexus page imagery
+├── scripts/                  # repo git-hook shell scripts (install-git-hooks.sh, pre-commit.sh)
+└── src/
+    ├── DeadReckoning.csproj  # SDK-style: **/*.cs globs recursively, so folders need no csproj edit
+    ├── Plugin.cs             # BepInEx entry point — stays beside the .csproj
+    ├── game/                 # Harmony patches + bridges onto live game assets
+    │   ├── CameraScrollPatch.cs        # scroll/zoom suppression patches + Far Sight coexistence
+    │   ├── QuestNodeLocator.cs         # objective ItemAsset → live harvestable scene node
+    │   ├── RoomRouter.cs               # BFS over the game's NavigationLibrary room graph
+    │   └── PathGuide.cs                # wraps the game's A* graph into a lead point
+    ├── ui/                   # everything the player sees: panels, widgets, sprites, HUD
+    │   ├── TrackHud.cs                 # screen-space "Seeking: X" overlay + stop control
+    │   ├── MapPin.cs                   # free-pin diamond + ping waves on the map
+    │   ├── MapMarkerTint.cs            # tracked house/NPC map-badge recolour (DRMarkerTint)
+    │   ├── PickerCardHighlight.cs      # NPC picker card selection frame + name-plate tint
+    │   ├── RelationshipTrackButton.cs  # Track pin injected into the Relationships row
+    │   ├── QuestTrackButton.cs         # "Seek Quest"/"Seek Job" button in the Quest Log
+    │   ├── TrackIcon.cs                # loads track-icon.png into a Sprite
+    │   ├── DRIcons.cs                  # small drawn glyphs (the stop ✕)
+    │   ├── DRUi.cs                     # FindDeep recursive transform search
+    │   └── HoverScale.cs               # pointer-hover scale animation behaviour
+    └── core/                 # the mod's own domain logic + runtime state
+        └── SkullGuide.cs               # target model, critter lifecycle, steering, orchestration
+```
+
+The two UI-injection files (`RelationshipTrackButton.cs`, `QuestTrackButton.cs`) each open with a
+small Harmony patch, but their bulk is the button they build, so they live in `ui/`, not `game/`.
+
+**Enforced homes:**
+
+- `src/Plugin.cs` — BepInEx entry point; must sit beside the `.csproj`
+- `src/game/` — Harmony patches and live-game bridges
+- `src/ui/` — panels, widgets, sprites, icons and HUD
+- `src/core/` — the mod's own domain logic, state and config
+- `scripts/` — repo tooling shell scripts (git hooks)
+- `pack.ps1` — workspace-synced release packager, required at the mod root
 
 ## Components
 
 | Component | File | Responsibility |
 |---|---|---|
 | **Plugin entry** | `src/Plugin.cs` | `DeadReckoningPlugin`: BepInEx entry, config binding, `Harmony.PatchAll`, lazy Far Sight coexistence patch, `Log`. Creates the `SkullGuide` MonoBehaviour. |
-| **Skull driver** | `src/SkullGuide.cs` | **The runtime core (God-file, ~1780 lines).** Target model + single-active-target invariant, critter spawn/despawn lifecycle, the per-frame `Update` loop, steering (leash, wall-avoid, ground-clamp, path-lead, idle spring-follow), NPC picker UI, quest-objective resolution (NPC/dev-name/gather-node/location) + quest HUD text, job hand-in resolution, map double-click tracking + free pin, flame recolour, marker-highlight orchestration, diagnostics probes. See **Structural debt**. |
-| **Quest node locator** | `src/QuestNodeLocator.cs` | Static. Bridges a "gather/mine `<item>`" objective to the world: reads the objective's `ItemAsset` from its `InjectionCollection`, then scans loaded `Interactable`s for a matching `IHarvestable`/`DestructibleView` node (the copper vein, the bush). Feeds `SkullGuide`'s quest resolution. |
-| **Cross-room routing** | `src/RoomRouter.cs` | Static. BFS over `NavigationLibrary`'s room graph → world position of the door to head toward a target room. |
-| **In-room pathing** | `src/PathGuide.cs` | Wraps the game's A* Pathfinding graph: a lead point a set distance along the walkable path to the target. |
-| **Seeking HUD** | `src/TrackHud.cs` | Screen-space overlay: "Seeking: X" / the quest objectives list, with a ✕ stop control. Owns its canvas + Gelica font lookup. |
-| **Map free-pin marker** | `src/MapPin.cs` | Red diamond + white ping waves drawn on the map at the pinned spot. |
-| **Picker card highlight** | `src/PickerCardHighlight.cs` | Clones the NPC picker card's native selection frame, recoloured purple, + name-plate tint. |
-| **Map badge highlight** | `src/MapMarkerTint.cs` | Recolours a tracked house/NPC map badge + adds ping waves (`DRMarkerTint` behaviour). |
-| **Relationships Track button** | `src/RelationshipTrackButton.cs` | Harmony patch on `RelationshipDailyActivitiesWidget.Setup` → a Track pin in the daily-activity row (`DRTrackRef`). |
-| **Quest Log Track button** | `src/QuestTrackButton.cs` | Harmony patches on `QuestScreen.ShowQuestInfo` / `ShowJobInfo` → one "Seek Quest" / "Seek Job" button (`DRQuestButton`, quest-or-job union). |
-| **Scroll coexistence** | `src/CameraScrollPatch.cs` | `WorldScrollBlock` flags + Harmony patches that stop the world camera zooming while the picker / Relationships panel is open, incl. the Far Sight mod coexistence postfix. |
-| **Track icon loader** | `src/TrackIcon.cs` | Loads `track-icon.png` (config override → bundled) into a `Sprite`. |
-| **Shared UI helpers** | `src/DRUi.cs`, `src/HoverScale.cs`, `src/DRIcons.cs` | `DRUi.FindDeep` (recursive transform search), `HoverScale` (pointer-hover scale animation, used by four callers), `DRIcons.BuildX` (draws an ✕). |
+| **Skull driver** | `src/core/SkullGuide.cs` | **The runtime core (God-file, ~1780 lines).** Target model + single-active-target invariant, critter spawn/despawn lifecycle, the per-frame `Update` loop, steering (leash, wall-avoid, ground-clamp, path-lead, idle spring-follow), NPC picker UI, quest-objective resolution (NPC/dev-name/gather-node/location) + quest HUD text, job hand-in resolution, map double-click tracking + free pin, flame recolour, marker-highlight orchestration, diagnostics probes. See **Structural debt**. |
+| **Quest node locator** | `src/game/QuestNodeLocator.cs` | Static. Bridges a "gather/mine `<item>`" objective to the world: reads the objective's `ItemAsset` from its `InjectionCollection`, then scans loaded `Interactable`s for a matching `IHarvestable`/`DestructibleView` node (the copper vein, the bush). Feeds `SkullGuide`'s quest resolution. |
+| **Cross-room routing** | `src/game/RoomRouter.cs` | Static. BFS over `NavigationLibrary`'s room graph → world position of the door to head toward a target room. |
+| **In-room pathing** | `src/game/PathGuide.cs` | Wraps the game's A* Pathfinding graph: a lead point a set distance along the walkable path to the target. |
+| **Seeking HUD** | `src/ui/TrackHud.cs` | Screen-space overlay: "Seeking: X" / the quest objectives list, with a ✕ stop control. Owns its canvas + Gelica font lookup. |
+| **Map free-pin marker** | `src/ui/MapPin.cs` | Red diamond + white ping waves drawn on the map at the pinned spot. |
+| **Picker card highlight** | `src/ui/PickerCardHighlight.cs` | Clones the NPC picker card's native selection frame, recoloured purple, + name-plate tint. |
+| **Map badge highlight** | `src/ui/MapMarkerTint.cs` | Recolours a tracked house/NPC map badge + adds ping waves (`DRMarkerTint` behaviour). |
+| **Relationships Track button** | `src/ui/RelationshipTrackButton.cs` | Harmony patch on `RelationshipDailyActivitiesWidget.Setup` → a Track pin in the daily-activity row (`DRTrackRef`). |
+| **Quest Log Track button** | `src/ui/QuestTrackButton.cs` | Harmony patches on `QuestScreen.ShowQuestInfo` / `ShowJobInfo` → one "Seek Quest" / "Seek Job" button (`DRQuestButton`, quest-or-job union). |
+| **Scroll coexistence** | `src/game/CameraScrollPatch.cs` | `WorldScrollBlock` flags + Harmony patches that stop the world camera zooming while the picker / Relationships panel is open, incl. the Far Sight mod coexistence postfix. |
+| **Track icon loader** | `src/ui/TrackIcon.cs` | Loads `track-icon.png` (config override → bundled) into a `Sprite`. |
+| **Shared UI helpers** | `src/ui/DRUi.cs`, `src/ui/HoverScale.cs`, `src/ui/DRIcons.cs` | `DRUi.FindDeep` (recursive transform search), `HoverScale` (pointer-hover scale animation, used by four callers), `DRIcons.BuildX` (draws an ✕). |
 
 ## Dependencies (direction of reference)
 
@@ -66,7 +115,10 @@ and the `ConfigEntry` statics — that's an accepted hub, not debt.
 
 ## Conventions
 
-- Flat `src/`; `pack.ps1` + `Directory.Build.props` are **workspace-synced canonicals** — never edit
+- `src/` is foldered by responsibility (`game/`, `ui/`, `core/`) with `Plugin.cs` at its root — the
+  enforced homes are in [Layout](#layout). Every type shares the one flat `DeadReckoning` namespace;
+  the folders are file organisation only, so **never** add or change a namespace to match a folder.
+- `pack.ps1` + `Directory.Build.props` are **workspace-synced canonicals** — never edit
   here (regenerated by `../../tools/sync-mod-files.ps1`). Version bumps go in the csproj only.
 - Game integration is two kinds of patch: the **UI-injection** patches (`RelationshipTrackButton`,
   `QuestTrackButton`) are additive Postfixes that only *add* UI and call `SkullGuide.Instance`, never
