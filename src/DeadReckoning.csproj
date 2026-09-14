@@ -69,7 +69,8 @@
       <HintPath>$(MoonlightPeaksManagedPath)\UnityEngine.UIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <!-- ImageConversion.LoadImage, to decode the user's track-icon.png at runtime. -->
+    <!-- ImageConversion.LoadImage, to decode track-icon.png at runtime - both the user override
+         and the embedded default go through it. -->
     <Reference Include="UnityEngine.ImageConversionModule">
       <HintPath>$(MoonlightPeaksManagedPath)\UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>false</Private>
@@ -94,12 +95,22 @@
     </Reference>
   </ItemGroup>
 
+  <!-- The default Track-button icon, embedded so it ships inside the DLL - the release zip
+       (pack.ps1) bundles only the DLL, so a built-in default has to live within it. A user PNG at
+       BepInEx/config/DeadReckoning/track-icon.png still overrides it. LogicalName pins the
+       resource name regardless of the file's on-disk folder. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\assets\track-icon.png">
+      <LogicalName>DeadReckoning.track-icon.png</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- The icon travels inside the DLL, so the dev install is byte-for-byte what ships. Copying a
+       loose PNG here is what hid the missing-icon bug: it only ever existed on this machine. -->
   <Target Name="DeployPlugin" AfterTargets="Build" Condition="'$(SkipDeploy)' != 'true'">
     <MakeDir Directories="$(ModDeployPath)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModDeployPath)" SkipUnchangedFiles="true" />
-    <!-- Ship the Track-button icon next to the DLL so it loads from the mod's own directory. -->
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\assets\track-icon.png" DestinationFolder="$(ModDeployPath)" SkipUnchangedFiles="true" />
-    <Message Importance="high" Text="Deployed $(AssemblyName).dll + track-icon.png -> $(ModDeployPath)" />
+    <Message Importance="high" Text="Deployed $(AssemblyName).dll -> $(ModDeployPath)" />
   </Target>
 
 </Project>

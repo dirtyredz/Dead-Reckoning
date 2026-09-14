@@ -151,7 +151,8 @@ Nothing to clean up; it's destroyed on room unload and auto-respawned while trac
 ## Build & release
 
 Standard workspace chain (see the root [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)):
-`Directory.Build.props` deploys the DLL + `track-icon.png` to `BepInEx/plugins/MoonlightPeaksMods/
-DeadReckoning` on build; `pack.ps1` produces `dist/DeadReckoning-<version>.zip` in Nexus layout;
+the csproj `DeployPlugin` target deploys the DLL (Track icon embedded inside it) to
+`BepInEx/plugins/MoonlightPeaksMods/DeadReckoning` on build — `Directory.Build.props` only
+defines the paths it uses, and is workspace-synced, so never edit it here; `pack.ps1` produces `dist/DeadReckoning-<version>.zip` in Nexus layout;
 version is single-sourced from the csproj `<Version>`. Published as
 [Nexus mod 144](https://www.nexusmods.com/moonlightpeaks/mods/144).

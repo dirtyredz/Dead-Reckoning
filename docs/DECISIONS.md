@@ -3,6 +3,22 @@
 Design/architecture decisions and their rationale, newest first. Rejected alternatives kept so we
 don't re-litigate them.
 
+## ADR-011 — The default Track icon ships inside the DLL, not beside it
+The default Track-button icon is an `<EmbeddedResource>` in `DeadReckoning.csproj` with a pinned
+`<LogicalName>` (`DeadReckoning.track-icon.png`), loaded from the assembly at runtime. **Rationale:**
+`pack.ps1` stages only `DeadReckoning.dll` into the release zip, so any loose asset is a dev-machine
+artifact that never reaches a Nexus installer. **This already shipped broken:** v1.2.1 copied a loose
+`track-icon.png` next to the DLL, so every real install fell back to a text label on the Track buttons
+while the dev install looked correct. The `DeployPlugin` target's loose copy was **removed
+deliberately** as part of this — the dev install must be byte-for-byte what ships, or the divergence
+hides exactly this class of bug. A user PNG at `BepInEx/config/DeadReckoning/track-icon.png` still
+overrides the embedded default, and the DLL-adjacent probe that used to sit between the two was
+removed with it — a stale loose PNG there would mask a broken embedded resource, which is the
+v1.2.1 failure all over again. **Rejected:** keeping the deploy-copy (the thing that broke); and
+teaching `pack.ps1` to bundle the PNG — it is a workspace-synced generated file that must not be
+hand-edited in this repo, and a second loose file would still go missing for anyone who installed
+only the DLL.
+
 ## ADR-010 — Additive UI integration; input suppression only where required
 **UI integration** is additive Postfixes that only add UI (`RelationshipDailyActivitiesWidget.Setup`,
 `QuestScreen.ShowQuestInfo`); the existing tracking path is never mutated, and buttons call

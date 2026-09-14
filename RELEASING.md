@@ -20,11 +20,12 @@ Produces `dist/DeadReckoning-<version>.zip`, reading the version from the csproj
 can never disagree with the DLL; `Plugin.cs` derives that same version at build time via
 `ModBuildInfo.Version`.
 
-**This mod ships two files, not one.** The archive contains both `DeadReckoning.dll` and
-`track-icon.png` under `BepInEx/plugins/DeadReckoning/` — the icon is loaded at runtime for the
-Relationships "Track" button (`DRIcons` / `RelationshipTrackButton`). `pack.ps1` copies both and
-fails if the icon is missing. If a build ever drops the icon, the button silently falls back to
-text rather than breaking.
+**This mod ships exactly one file: `DeadReckoning.dll`.** `pack.ps1` stages only the built DLL, so
+anything a user needs must live *inside* it — the Track-button icon is an `<EmbeddedResource>`
+(`DeadReckoning.track-icon.png`) for that reason. A loose asset copied by the csproj deploy target
+exists on the dev machine only and will NOT reach anyone installing from Nexus; that is exactly how
+v1.2.1 shipped without its icon (fixed 2026-09-13). If the embedded resource is ever missing, the
+button silently falls back to a text label rather than breaking.
 
 There is no test project: every code path reads Unity and live game state — the soul-blob critter,
 Harmony patches, the map widgets, A* pathfinding. The checklist below carries the weight instead.
@@ -68,8 +69,9 @@ Then the items specific to this mod:
 - [ ] Fresh install: delete `BepInEx/config/com.dirtyredz.moonlightpeaks.deadreckoning.cfg`,
       launch, confirm sensible defaults are written
 - [ ] Screenshots show the current build
-- [ ] Archive extracted onto a clean install and verified in game — **both** the DLL and
-      `track-icon.png` land in `BepInEx/plugins/DeadReckoning/`
+- [ ] Archive extracted onto a clean install and verified in game — the Track buttons show the
+      pin icon with **no** `BepInEx/config/DeadReckoning/track-icon.png` override present
+      (that is what a Nexus installer gets). A loose `track-icon.png` beside the DLL is ignored.
 
 ## Verifying save safety
 

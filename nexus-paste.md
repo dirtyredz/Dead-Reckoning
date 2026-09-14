@@ -83,7 +83,7 @@ Because it's reading the quest rather than being handed a waypoint, two things c
 [list=1]
 [*]Install [b]BepInEx 5 (win_x64)[/b] into your Moonlight Peaks folder, if you do not have it already. The BepInEx folder sits beside Moonlight Peaks.exe.
 [*]Launch the game once, then quit. This creates the BepInEx/plugins folder.
-[*]Download the archive from the Files tab and extract it over your Moonlight Peaks folder, so the files end up at BepInEx/plugins/DeadReckoning/DeadReckoning.dll (a track-icon.png ships beside it — keep them together).
+[*]Download the archive from the Files tab and extract it over your Moonlight Peaks folder, so the files end up at BepInEx/plugins/DeadReckoning/DeadReckoning.dll (a single DLL — the Track icon is inside it).
 [*]Launch the game.
 [/list]
 [color=#D4D4D8]To uninstall, delete the BepInEx/plugins/DeadReckoning folder. Your save is untouched, because nothing was ever written to it.[/color]

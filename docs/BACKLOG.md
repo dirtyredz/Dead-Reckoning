@@ -67,6 +67,13 @@ After those cuts `SkullGuide` becomes what its name promises: skull lifecycle + 
 - **Diagnostics probes** — when extracting subsystems, keep each probe beside its subsystem; only a
   generic transform/UI-tree walker is worth sharing (avoid a `DrProbes` grab-bag).
 
+- **`TrackIcon` hand-rolls lazy caching twice** — two parallel field pairs (`cached`/`tried` and
+  `embeddedDefault`/`embeddedTried`) plus a duplicated `cached != null ? cached : DefaultIcon()`
+  fallback. `Lazy<Sprite>` (or one small private cached-sprite helper) removes the hand-maintained
+  bool flags entirely. Flagged by the abstraction lens 2026-09-14; deferred because the icon rework
+  could not be compiled in that session and the current code is correct. Do it next time the file
+  is open with a working build.
+
 ## P1/P2 — gameplay (from DESIGN.md, deferred)
 
 - **[P1] In-house precision** — once inside the target room, point at the exact `EntityLocation`

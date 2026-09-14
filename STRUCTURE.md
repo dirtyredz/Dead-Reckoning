@@ -15,7 +15,7 @@ tells you what's being sought. Plugin source sits under `src/` in three responsi
 (`game/`, `ui/`, `core/`), with only `Plugin.cs` beside the `.csproj` — see [Layout](#layout).
 Version is single-sourced from `src/DeadReckoning.csproj` via `GenerateModBuildInfo`.
 
-Ships two files: `DeadReckoning.dll` + `track-icon.png`.
+Ships one file: `DeadReckoning.dll`. `assets/track-icon.png` is embedded in it as a resource.
 
 ## Layout
 
@@ -26,7 +26,7 @@ under it are parsed by the placement hook, so keep the two halves in agreement.
 DeadReckoning/
 ├── pack.ps1                  # workspace-synced release packager (must stay at the mod root)
 ├── STRUCTURE.md              # this map · README/CLAUDE/CHANGELOG/DESIGN/NEXUS/RELEASING alongside
-├── assets/                   # track-icon.png (shipped beside the DLL)
+├── assets/                   # track-icon.png 256px (embedded into the DLL at build)
 ├── docs/                     # ARCHITECTURE · DECISIONS · FEATURES · ROADMAP · BACKLOG · GOTCHAS
 ├── screenshots/              # Nexus page imagery
 ├── scripts/                  # repo git-hook shell scripts (install-git-hooks.sh, pre-commit.sh)
@@ -45,7 +45,7 @@ DeadReckoning/
     │   ├── PickerCardHighlight.cs      # NPC picker card selection frame + name-plate tint
     │   ├── RelationshipTrackButton.cs  # Track pin injected into the Relationships row
     │   ├── QuestTrackButton.cs         # "Seek Quest"/"Seek Job" button in the Quest Log
-    │   ├── TrackIcon.cs                # loads track-icon.png into a Sprite
+    │   ├── TrackIcon.cs                # config override -> embedded default, into a Sprite
     │   ├── DRIcons.cs                  # small drawn glyphs (the stop ✕)
     │   ├── DRUi.cs                     # FindDeep recursive transform search
     │   └── HoverScale.cs               # pointer-hover scale animation behaviour
@@ -81,7 +81,7 @@ small Harmony patch, but their bulk is the button they build, so they live in `u
 | **Relationships Track button** | `src/ui/RelationshipTrackButton.cs` | Harmony patch on `RelationshipDailyActivitiesWidget.Setup` → a Track pin in the daily-activity row (`DRTrackRef`). |
 | **Quest Log Track button** | `src/ui/QuestTrackButton.cs` | Harmony patches on `QuestScreen.ShowQuestInfo` / `ShowJobInfo` → one "Seek Quest" / "Seek Job" button (`DRQuestButton`, quest-or-job union). |
 | **Scroll coexistence** | `src/game/CameraScrollPatch.cs` | `WorldScrollBlock` flags + Harmony patches that stop the world camera zooming while the picker / Relationships panel is open, incl. the Far Sight mod coexistence postfix. |
-| **Track icon loader** | `src/ui/TrackIcon.cs` | Loads `track-icon.png` (config override → bundled) into a `Sprite`. |
+| **Track icon loader** | `src/ui/TrackIcon.cs` | Loads `track-icon.png` (config override → embedded default) into a `Sprite`. |
 | **Shared UI helpers** | `src/ui/DRUi.cs`, `src/ui/HoverScale.cs`, `src/ui/DRIcons.cs` | `DRUi.FindDeep` (recursive transform search), `HoverScale` (pointer-hover scale animation, used by four callers), `DRIcons.BuildX` (draws an ✕). |
 
 ## Dependencies (direction of reference)

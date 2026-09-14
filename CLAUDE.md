@@ -45,7 +45,9 @@ as [Nexus mod 144](https://www.nexusmods.com/moonlightpeaks/mods/144), current v
 
 ## Build & release
 
-- Build auto-deploys the DLL + `track-icon.png` to `BepInEx/plugins/MoonlightPeaksMods/DeadReckoning`.
+- Build auto-deploys the DLL to `BepInEx/plugins/MoonlightPeaksMods/DeadReckoning`. The Track icon
+  is an `<EmbeddedResource>` inside the DLL — **the release zip ships only the DLL**, so anything a
+  user must have has to live inside it, never as a loose file the deploy target copies.
 - Pack: `powershell -File pack.ps1` → `dist/DeadReckoning-<version>.zip` (Nexus layout).
 - Publish/update the Nexus page with the workspace **nexus-publish** skill. Full chain in the root
   [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md).

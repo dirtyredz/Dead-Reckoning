@@ -46,7 +46,7 @@ Capability inventory + status. ✅ shipped · 🚧 partial · 💡 planned (see 
 | Far Sight coexistence | ✅ | Far Sight stands down (no scroll-zoom) over our picker/Relationships panel. |
 | Scroll-zoom block | ✅ | Camera doesn't zoom while our menus are open (also without Far Sight). |
 | Mod Menu / ModNook sections | ✅ | Config tagged into General / Follow tuning / Diagnostics sections. |
-| Custom Track icon | ✅ | `track-icon.png` bundled; override at `BepInEx/config/DeadReckoning/track-icon.png`. |
+| Custom Track icon | ✅ | Default embedded in the DLL; override at `BepInEx/config/DeadReckoning/track-icon.png`. |
 
 ## Planned / not done
 

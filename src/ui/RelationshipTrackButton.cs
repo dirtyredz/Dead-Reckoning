@@ -13,7 +13,7 @@ namespace DeadReckoning
     /// Hooks <see cref="RelationshipDailyActivitiesWidget"/>.Setup — the shared component that builds
     /// the chat/gift/affection/nokturna icons — so the control appears everywhere that row does: the
     /// Relationships list AND the character screen. The control is a bundled pin icon
-    /// (<c>track-icon.png</c>, next to the DLL) dropped right after the Gift icon; it renders in a
+    /// (<c>track-icon.png</c>, embedded in the DLL) dropped right after the Gift icon; it renders in a
     /// larger child so it matches the other icons' weight, turns green while tracking, and scales on
     /// hover. Purely additive — nothing in the existing tracking path is touched.
     /// </summary>
