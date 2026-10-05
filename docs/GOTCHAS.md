@@ -95,3 +95,6 @@ or the UI patches.
   `BepInEx/config/DeadReckoning/track-icon.png` override present — that is now the only thing
   that can mask a missing embedded default. A loose `track-icon.png` beside the DLL is no longer
   read at all (the probe was removed; see ADR-011), so one left over from v1.2.1 is inert.
+- The `find-existing-or-build` button lifecycle differs across the three button files (deep vs shallow
+  `Find`, per-click vs scene-wide vs attach-only refresh). Investigate whether the differences are
+  load-bearing before unifying — don't force a shared helper mechanically.
