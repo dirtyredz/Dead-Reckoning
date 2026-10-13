@@ -98,3 +98,5 @@ or the UI patches.
 - The `find-existing-or-build` button lifecycle differs across the three button files (deep vs shallow
   `Find`, per-click vs scene-wide vs attach-only refresh). Investigate whether the differences are
   load-bearing before unifying — don't force a shared helper mechanically.
+
+- **1.3.9 compatibility (2026-10-12):** `CharacterMover.Teleport` renamed its named parameter `forceToWalkablePosition` to `forceToMainArea` (positional signature unchanged). Always delete `src/bin` and `src/obj` before rebuilding after a game update - a plain build reuses stale IL. Runtime-unverified until play-tested.

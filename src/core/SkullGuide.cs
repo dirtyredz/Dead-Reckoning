@@ -1471,7 +1471,7 @@ namespace DeadReckoning
             {
                 Vector3 reset = player + PlayerForwardIsh() * DeadReckoningPlugin.StandoffDistance.Value
                                 + Vector3.up * DeadReckoningPlugin.HoverHeight.Value;
-                active.Mover.Teleport(reset, forceToWalkablePosition: false);
+                active.Mover.Teleport(reset, forceToMainArea: false);
                 cachedRoute = null; nextRouteAt = 0f;
                 return;
             }
@@ -1549,7 +1549,7 @@ namespace DeadReckoning
             if (justSpawned)
             {
                 // Land it on its spot instantly (while it's still fading in) so it never flies across.
-                active.Mover.Teleport(hover, forceToWalkablePosition: false);
+                active.Mover.Teleport(hover, forceToMainArea: false);
                 justSpawned = false;
             }
             else
