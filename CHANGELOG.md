@@ -6,6 +6,12 @@ subsystems, the game types leaned on, and the things that were tried and dropped
 One entry per **released** version, not per build — see
 [12-versioning-and-release.md](../../12-versioning-and-release.md).
 
+## 1.2.3
+
+Compatibility with Moonlight Peaks 1.3.9.
+
+- Internal: adapted to a renamed Mover.Teleport parameter in the game; no behaviour change.
+
 ## 1.2.1
 
 Jobs in the quest tab stop lying about being tracked — and become trackable for real.
